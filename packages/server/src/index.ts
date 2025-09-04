@@ -95,7 +95,11 @@ async function startServer() {
             next()
         })
         
-        // Routes
+        // Serve static files from client build
+        const staticPath = resolve(process.cwd(), 'build/dist/public')
+        app.use(express.static(staticPath))
+        
+        // API Routes
         app.use('/api/sessions', createSessionRouter(sessionRepository, sessionService, toolExecutionService))
         app.use('/api/agents', createAgentRouter())
         app.use('/api/ai', createAIRouter())
@@ -108,6 +112,15 @@ async function startServer() {
                 version: '1.0.0',
                 environment: config.environment
             })
+        })
+        
+        // Serve index.html for all non-API routes (SPA fallback)
+        app.get('*', (req, res) => {
+            // Don't serve index.html for API routes
+            if (req.path.startsWith('/api')) {
+                return res.status(404).json({ error: 'API endpoint not found' })
+            }
+            res.sendFile(resolve(staticPath, 'index.html'))
         })
         
         // Error handling

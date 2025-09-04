@@ -50,6 +50,9 @@ COPY --from=builder /app/build ./build
 COPY --from=builder /app/packages/schema/dist ./packages/schema/dist
 COPY --from=builder /app/packages/server/dist ./packages/server/dist
 
+# Copy static client files to be served by the server
+COPY --from=builder /app/build/dist/public ./build/dist/public
+
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nextjs -u 1001
