@@ -1,0 +1,37 @@
+{
+  "name": "@agent-browser/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@mui/material": "^6.1.6",
+    "@mui/icons-material": "^6.1.6",
+    "@emotion/react": "^11.13.3",
+    "@emotion/styled": "^11.13.0",
+    "jotai": "^2.10.3",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "eslint": "^9.12.0",
+    "eslint-plugin-react-hooks": "^5.1.0-rc-fb9a90fa48-20240614",
+    "eslint-plugin-react-refresh": "^0.4.12",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8",
+    "@agent-browser/schema": "workspace:*"
+  }
+}
