@@ -27,7 +27,7 @@ export function ToolsPanel({ sessionVM }: ToolsPanelProps) {
   if (tools.length === 0) {
     return null
   }
-  
+
   return (
     <Card>
       <CardContent>
@@ -45,7 +45,7 @@ export function ToolsPanel({ sessionVM }: ToolsPanelProps) {
             sx={{ ml: 2 }} 
           />
         </Box>
-        
+
         {implementationPlan && (
           <Box sx={{ mb: 3 }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -68,17 +68,18 @@ export function ToolsPanel({ sessionVM }: ToolsPanelProps) {
             )}
           </Box>
         )}
-        
-        <Grid container spacing={3}>
-          {tools.map((tool: any) => (
-            <Grid item xs={12} md={6} lg={4} key={tool.id}>
-              <ToolCard 
-                tool={tool} 
-                sessionId={sessionVM.sessionM.id} 
-              />
-            </Grid>
-          ))}
-        </Grid>
+        <Box sx={{ width: "75%", mx: "auto" }}>
+          <Grid container spacing={3}>
+            {tools.map((tool: any) => (
+              <Grid item xs={12} key={tool.id}>
+                <ToolCard
+                  tool={tool}
+                  sessionId={sessionVM.sessionM.id}
+                />
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
       </CardContent>
     </Card>
   )

@@ -22,19 +22,11 @@ Given a tool requirement and relevant API specifications, you must create:
 2. Proper error handling and validation
 3. Clear docstrings following Google style
 4. Input/output handling matching the specified schemas
-5. Comprehensive test cases
 
 You MUST respond with valid JSON matching this exact structure:
 {
   "pythonCode": "string - complete Python function implementation",
   "dependencies": ["string array of required pip packages"],
-  "testCases": [
-    {
-      "input": {JSON object matching inputSchema},
-      "expectedOutput": {JSON object matching outputSchema},
-      "description": "string - what this test case validates"
-    }
-  ],
   "implementation_notes": "string - brief explanation of implementation approach"
 }
 
@@ -70,13 +62,6 @@ Error Handling:
 - Handle missing dependencies gracefully  
 - Catch and re-raise exceptions with context
 
-Test Cases:
-- Create at least 2-3 comprehensive test cases
-- Include edge cases and typical use cases
-- Provide realistic input data
-- Show expected outputs clearly
-- Test error conditions where appropriate
-
 Available APIs: You have access to the provided API specifications. Use them correctly according to their documented parameters and usage patterns.`;
 
         const userMessage = this.buildUserMessage(toolRequirement, relevantApis);
@@ -105,7 +90,6 @@ Available APIs: You have access to the provided API specifications. Use them cor
             console.log('✅ ImplementerAgent: Implementation completed successfully');
             console.log(`📄 Generated ${response.pythonCode.length} characters of Python code`);
             console.log(`📦 Dependencies: ${response.dependencies.join(', ')}`);
-            console.log(`🧪 Test cases: ${response.testCases.length}`);
 
             // Convert EngineerResponse to ToolSpec
             const toolSpec: ToolSpec = {
@@ -117,7 +101,7 @@ Available APIs: You have access to the provided API specifications. Use them cor
                 inputSchema: toolRequirement.inputFormat,
                 outputSchema: toolRequirement.outputFormat,
                 dependencies: response.dependencies,
-                testCases: response.testCases,
+                testCases: [], // Test cases temporarily disabled to avoid JSON parsing issues
                 status: 'implemented',
                 createdAt: new Date()
             };
@@ -174,20 +158,11 @@ Make sure the generated code is syntactically correct and follows best practices
             throw new Error('dependencies must be an array');
         }
 
-        if (!Array.isArray(response.testCases)) {
-            throw new Error('testCases must be an array');
-        }
 
         if (!response.implementation_notes || typeof response.implementation_notes !== 'string') {
             throw new Error('Missing or invalid implementation_notes in implementer response');
         }
 
-        // Validate test cases structure
-        for (const testCase of response.testCases) {
-            if (!testCase.input || !testCase.expectedOutput || !testCase.description) {
-                throw new Error('Test cases must have input, expectedOutput, and description fields');
-            }
-        }
 
         // Basic Python code validation - check for common syntax issues
         if (!response.pythonCode.includes('def ') || !response.pythonCode.includes('(input_data: dict)')) {

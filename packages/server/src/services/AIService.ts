@@ -47,7 +47,7 @@ export class AIService {
         const responseText = await this.generateResponse(messages, modelName);
         
         console.log(`🔄 Parsing JSON response...`);
-        console.log(`📄 Raw response preview: ${responseText}...`);
+        console.log(`📄 Raw response preview: ${responseText.substring(0, 200)}`);
         
         try {
             const parsed = JSON.parse(responseText) as T;

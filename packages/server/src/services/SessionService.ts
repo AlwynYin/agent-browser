@@ -9,6 +9,8 @@ import { ImplementerAgent } from '../agents/ImplementerAgent.js'
 interface SessionWebSocketHandler {
     broadcastStatusUpdate(sessionId: string, status: SessionStatus, progress?: number): void
     broadcastToolImplemented(sessionId: string, tool: any): void
+    broadcastApiSpecs(sessionId: string, apiSpecs: any[]): void
+    broadcastError(sessionId: string, error: string, context?: any): void
 }
 
 export class SessionService {
@@ -77,7 +79,27 @@ export class SessionService {
             }
             
             console.log('🔍 Searching for APIs with Browser Agent...')
-            const apiSpecs = await this.browserAgent.searchApis(searchPlan)
+            
+            // Broadcast API search start event
+            this.webSocketHandler?.broadcastApiSpecs(sessionId, []) // Empty array indicates search started
+            
+            // Add a progress callback to track individual search requests
+            let searchRequestCount = 0
+            const totalQueries = searchPlan.queries.length
+            
+            const progressCallback = (queryMessage: string, queryIndex: number) => {
+                searchRequestCount++
+                // Broadcast search progress as an error event (reusing existing event type)
+                this.webSocketHandler?.broadcastError(sessionId, queryMessage, {
+                    type: 'search-progress',
+                    queryIndex,
+                    totalQueries,
+                    progress: Math.round((queryIndex / totalQueries) * 100)
+                })
+                console.log(`📋 API Search Progress: ${queryMessage} (${queryIndex}/${totalQueries})`)
+            }
+            
+            const apiSpecs = await this.browserAgent.searchApis(searchPlan, progressCallback, sessionId)
             
             session.apiSpecs = apiSpecs
             await this.sessionRepository.save(session)

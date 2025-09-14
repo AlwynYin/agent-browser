@@ -27,42 +27,7 @@ import {
 } from '@mui/icons-material'
 import { ToolSpec, ExecutionResult } from '@agent-browser/schema'
 import { api } from '../utils/api'
-
-// Simple code editor component (in a full implementation, this would use CodeMirror)
-interface CodeEditorProps {
-  value: string
-  onChange: (value: string) => void
-  language?: string
-  readOnly?: boolean
-}
-
-function SimpleCodeEditor({ value, onChange, readOnly = false }: CodeEditorProps) {
-  return (
-    <Box
-      component="textarea"
-      value={value}
-      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}
-      readOnly={readOnly}
-      sx={{
-        width: '100%',
-        minHeight: 200,
-        maxHeight: 400,
-        fontFamily: 'monospace',
-        fontSize: '0.875rem',
-        border: '1px solid',
-        borderColor: 'divider',
-        borderRadius: 1,
-        p: 1,
-        resize: 'vertical',
-        backgroundColor: readOnly ? 'grey.50' : 'background.paper',
-        '&:focus': {
-          outline: 'none',
-          borderColor: 'primary.main'
-        }
-      }}
-    />
-  )
-}
+import { SyntaxHighlightedCodeEditor } from './SyntaxHighlightedCodeEditor'
 
 interface PythonExecutorProps {
   tool?: ToolSpec
@@ -262,11 +227,14 @@ export function PythonExecutor({
             </Box>
           )}
         </Box>
-        <SimpleCodeEditor
+        <SyntaxHighlightedCodeEditor
           value={code}
           onChange={setCode}
           language="python"
-          readOnly={false} // Always allow editing
+          readOnly={false}
+          placeholder="Enter your Python code here..."
+          height="100%"
+          minHeight={300}
         />
       </Box>
 

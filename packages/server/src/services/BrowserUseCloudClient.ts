@@ -1,4 +1,11 @@
-import {loadConfig} from '../config';
+import { loadConfig } from '../config';
+import { 
+    BrowserClient, 
+    BrowserTask, 
+    BrowserTaskResult, 
+    BrowserTaskStep, 
+    BrowserOutputFile 
+} from './BrowserClient';
 
 // Browser-Use Cloud API Types
 interface CreateTaskRequest {
@@ -50,7 +57,7 @@ interface CreateTaskResponse {
     id: string;
 }
 
-export class BrowserUseCloudClient {
+export class BrowserUseCloudClient implements BrowserClient {
     private apiKey: string | null = null;
     private initialized = false;
     private baseUrl = 'https://api.browser-use.com/api/v2';
@@ -117,18 +124,19 @@ export class BrowserUseCloudClient {
         return data as T;
     }
 
-    async createTask(request: CreateTaskRequest): Promise<string> {
-        console.log(`🚀 Creating browser-use task: "${request.task.substring(0, 50)}..."`);
+    // BrowserClient interface implementation
+    async createTask(task: BrowserTask): Promise<string> {
+        console.log(`🚀 Creating browser-use task: "${task.task.substring(0, 50)}..."`);
         
         const response = await this.makeRequest<CreateTaskResponse>('/tasks', 'POST', {
-            task: request.task,
-            llm: request.llm || 'o4-mini', // Fast and cost-effective
-            maxSteps: request.maxSteps || 50,
-            structuredOutput: request.structuredOutput,
-            flashMode: true, // Enable fast mode
-            thinking: false, // Disable thinking for speed
-            vision: true, // Enable vision for better web understanding
-            ...request
+            task: task.task,
+            llm: task.llm || 'gemini-2.5-flash', // Fast and cost-effective
+            maxSteps: task.maxSteps || 80,
+            structuredOutput: task.structuredOutput,
+            flashMode: task.flashMode ?? true, // Enable fast mode
+            thinking: task.thinking ?? false, // Disable thinking for speed
+            vision: task.vision ?? true, // Enable vision for better web understanding
+            ...task
         });
 
         console.log(`✅ Task created with ID: ${response.id}`);
@@ -140,7 +148,7 @@ export class BrowserUseCloudClient {
         return await this.makeRequest<TaskResponse>(`/tasks/${taskId}`);
     }
 
-    async waitForTaskCompletion(taskId: string, timeoutMs: number = 1200000): Promise<TaskResponse> {
+    async waitForTaskCompletion(taskId: string, timeoutMs: number = 1200000): Promise<BrowserTaskResult> {
         console.log(`⏳ Waiting for task completion: ${taskId} (timeout: ${timeoutMs}ms)`);
         
         const startTime = Date.now();
@@ -153,7 +161,7 @@ export class BrowserUseCloudClient {
 
             if (task.status === 'finished') {
                 console.log(`✅ Task finished: ${taskId}`);
-                return task;
+                return this.convertToBrowserTaskResult(task);
             }
 
             if (task.status === 'failed' || task.status === 'stopped') {
@@ -166,6 +174,15 @@ export class BrowserUseCloudClient {
         }
 
         throw new Error(`Task timeout after ${timeoutMs}ms: ${taskId}`);
+    }
+
+    async getTaskStatus(taskId: string): Promise<BrowserTaskResult> {
+        const task = await this.getTask(taskId);
+        return this.convertToBrowserTaskResult(task);
+    }
+
+    getClientName(): string {
+        return 'Browser-Use Cloud API';
     }
 
     async stopTask(taskId: string): Promise<void> {
@@ -189,5 +206,35 @@ export class BrowserUseCloudClient {
             console.log(`❌ Browser-Use API unavailable: ${error.message}`);
             return false;
         }
+    }
+
+    // Convert Browser-Use API response to BrowserClient interface format
+    private convertToBrowserTaskResult(task: TaskResponse): BrowserTaskResult {
+        return {
+            id: task.id,
+            task: task.task,
+            llm: task.llm,
+            status: task.status,
+            output: task.output,
+            structuredOutput: task.structuredOutput,
+            steps: task.steps.map(step => ({
+                id: step.id,
+                type: step.type,
+                status: step.status,
+                content: step.content,
+                createdAt: step.createdAt
+            })),
+            outputFiles: task.outputFiles.map(file => ({
+                id: file.id,
+                name: file.fileName,
+                type: file.contentType,
+                url: '', // Browser-Use doesn't provide direct URLs
+                size: file.sizeBytes
+            })),
+            createdAt: task.createdAt,
+            updatedAt: task.updatedAt,
+            sessionId: task.sessionId,
+            metadata: task.metadata
+        };
     }
 }

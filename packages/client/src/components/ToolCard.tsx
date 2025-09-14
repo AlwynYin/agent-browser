@@ -3,15 +3,11 @@ import { useState } from 'react'
 import {
   Card,
   CardContent,
-  CardActions,
   Typography,
   TextField,
   Button,
   Box,
   Alert,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   Chip,
   CircularProgress,
   Tabs,
@@ -20,7 +16,6 @@ import {
 import {
   PlayArrow as PlayIcon,
   Code as CodeIcon,
-  ExpandMore as ExpandMoreIcon,
   CheckCircle as CheckIcon,
   Error as ErrorIcon,
   Terminal as TerminalIcon,
@@ -29,6 +24,7 @@ import {
 import { ToolSpec, ExecutionResult } from '@agent-browser/schema'
 import { api } from '../utils/api'
 import { PythonExecutor } from './PythonExecutor'
+import { SyntaxHighlightedCodeEditor } from './SyntaxHighlightedCodeEditor'
 
 interface ToolCardProps {
   tool: ToolSpec
@@ -46,7 +42,7 @@ function TabPanel(props: TabPanelProps) {
       aria-labelledby={`tool-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ p: 2 }}>{children}</Box>}
+      {value === index && <Box sx={{ p: index === 1 ? 0 : 2, height: index === 1 ? '100%' : 'auto' }}>{children}</Box>}
     </div>
   )
 }
@@ -102,7 +98,7 @@ export function ToolCard({ tool, sessionId }: ToolCardProps) {
     return JSON.stringify(output, null, 2)
   }
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue)
   }
 
@@ -111,7 +107,7 @@ export function ToolCard({ tool, sessionId }: ToolCardProps) {
   }
   
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Card sx={{ height: 700, display: 'flex', flexDirection: 'column', minHeight: 400 }}>
       {/* Header */}
       <CardContent sx={{ pb: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -156,16 +152,10 @@ export function ToolCard({ tool, sessionId }: ToolCardProps) {
             aria-controls="tool-tabpanel-0"
           />
           <Tab 
-            icon={<TerminalIcon />} 
-            label="Python Executor" 
-            id="tool-tab-1"
-            aria-controls="tool-tabpanel-1"
-          />
-          <Tab 
             icon={<CodeIcon />} 
             label="View Code" 
-            id="tool-tab-2"
-            aria-controls="tool-tabpanel-2"
+            id="tool-tab-1"
+            aria-controls="tool-tabpanel-1"
           />
         </Tabs>
       </Box>
@@ -180,7 +170,7 @@ export function ToolCard({ tool, sessionId }: ToolCardProps) {
               label="Input (JSON)"
               multiline
               minRows={3}
-              maxRows={6}
+              maxRows={20}
               fullWidth
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -252,32 +242,16 @@ export function ToolCard({ tool, sessionId }: ToolCardProps) {
           </Box>
         </TabPanel>
 
-        {/* Python Executor Tab */}
-        <TabPanel value={tabValue} index={1}>
-          <PythonExecutor 
-            tool={tool}
-            sessionId={sessionId}
-            onExecutionResult={handleExecutionResult}
-          />
-        </TabPanel>
-
         {/* Code View Tab */}
-        <TabPanel value={tabValue} index={2}>
-          <Box
-            sx={{
-              backgroundColor: 'grey.900',
-              color: 'grey.100',
-              p: 2,
-              borderRadius: 1,
-              fontFamily: 'monospace',
-              fontSize: '0.75rem',
-              maxHeight: 400,
-              overflow: 'auto'
-            }}
-          >
-            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-              {tool.pythonCode}
-            </pre>
+        <TabPanel value={tabValue} index={1}>
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <SyntaxHighlightedCodeEditor
+              value={tool.pythonCode}
+              language="python"
+              readOnly={true}
+              height="100%"
+              minHeight={200}
+            />
           </Box>
         </TabPanel>
       </Box>

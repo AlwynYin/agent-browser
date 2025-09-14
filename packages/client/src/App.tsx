@@ -17,6 +17,7 @@ import { Add as AddIcon, MenuBook as MenuBookIcon } from '@mui/icons-material'
 import { useAtom } from 'jotai'
 import { currentSessionIdAtom } from './atoms/sessionAtoms'
 import { SessionView } from './components/SessionView'
+import { SessionListView } from './components/SessionListView'
 import { CreateSessionDialog } from './components/CreateSessionDialog'
 import { useWebSocket } from './hooks/useWebSocket'
 
@@ -40,6 +41,14 @@ export default function App() {
   const handleCloseCreateDialog = () => {
     setCreateDialogOpen(false)
   }
+
+  const handleSelectSession = (sessionId: string) => {
+    setCurrentSessionId(sessionId)
+  }
+
+  const handleBackToList = () => {
+    setCurrentSessionId(null)
+  }
   
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -48,7 +57,7 @@ export default function App() {
         <Toolbar>
           <MenuBookIcon sx={{ mr: 2 }} />
           <Typography variant="h6" component="h1" sx={{ flexGrow: 1 }}>
-            Agent Browser
+            El Agente Forjador
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Chemistry Computation Tools
@@ -59,9 +68,15 @@ export default function App() {
       {/* Main Content */}
       <Container maxWidth="xl" sx={{ flex: 1, py: 3 }}>
         {currentSessionId ? (
-          <SessionView sessionId={currentSessionId} />
+          <SessionView 
+            sessionId={currentSessionId} 
+            onBack={handleBackToList}
+          />
         ) : (
-          <WelcomeView onCreateSession={handleNewSession} />
+          <SessionListView 
+            onSelectSession={handleSelectSession}
+            onCreateSession={handleNewSession}
+          />
         )}
       </Container>
       
@@ -108,48 +123,3 @@ export default function App() {
   )
 }
 
-// Welcome view shown when no session is selected  
-function WelcomeView({ onCreateSession: _onCreateSession }: { onCreateSession: () => void }) {
-  return (
-    <Box 
-      sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        minHeight: '60vh',
-        textAlign: 'center',
-        gap: 3
-      }}
-    >
-      <MenuBookIcon sx={{ fontSize: 80, color: 'primary.main', opacity: 0.6 }} />
-      
-      <Box>
-        <Typography variant="h3" gutterBottom color="primary">
-          Welcome to Agent Browser
-        </Typography>
-        <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 600, mb: 4 }}>
-          An agentic system that creates Python tools for chemistry computation. 
-          Get started by describing what you need to compute.
-        </Typography>
-      </Box>
-      
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-        <Typography variant="body1" color="text.secondary">
-          Examples you can try:
-        </Typography>
-        <Box sx={{ textAlign: 'left' }}>
-          <Typography variant="body2" color="text.secondary">
-            • "Calculate molecular descriptors for a SMILES string"
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            • "Optimize a molecular structure using ASE"
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            • "Perform DFT calculations with PySCF"
-          </Typography>
-        </Box>
-      </Box>
-    </Box>
-  )
-}

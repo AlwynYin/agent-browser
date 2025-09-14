@@ -1,5 +1,5 @@
 import {SearchPlan, SearchQuery, ApiSpec} from '@agent-browser/schema';
-import {BrowserUseCloudClient} from '../services/BrowserUseCloudClient';
+import {BrowserClient, BrowserTask} from '../services/BrowserClient';
 
 // Documentation site mappings for chemistry packages
 const DOCUMENTATION_SITES = {
@@ -46,11 +46,11 @@ interface QueryResult {
 }
 
 export class BrowserAgent {
-    private browserClient: BrowserUseCloudClient;
+    private browserClient: BrowserClient;
 
-    constructor() {
-        this.browserClient = new BrowserUseCloudClient();
-        console.log(`🔍 BrowserAgent initialized with cloud API`);
+    constructor(browserClient: BrowserClient) {
+        this.browserClient = browserClient;
+        console.log(`🔍 BrowserAgent initialized with ${browserClient.getClientName()}`);
     }
 
     async isAvailable(): Promise<boolean> {
@@ -60,25 +60,29 @@ export class BrowserAgent {
         return available;
     }
 
-    async searchApis(searchPlan: SearchPlan): Promise<ApiSpec[]> {
+    async searchApis(
+        searchPlan: SearchPlan, 
+        progressCallback?: (message: string, queryIndex: number) => void,
+        sessionId?: string
+    ): Promise<ApiSpec[]> {
         console.log(`🔍 BrowserAgent.searchApis called with ${searchPlan.queries.length} queries`);
         
         // Check if service is available
         const available = await this.isAvailable();
         if (!available) {
-            throw new Error('Browser-Use cloud API is not available. Please check your BROWSER_USE_API_KEY.');
+            throw new Error(`${this.browserClient.getClientName()} is not available. Please check your configuration.`);
         }
 
-        console.log('✅ Browser-Use cloud API is available, proceeding with search...');
+        console.log(`✅ ${this.browserClient.getClientName()} is available, proceeding with search...`);
 
         const allApiSpecs: ApiSpec[] = [];
 
         try {
-            console.log(`📊 Processing ${searchPlan.queries.length} queries for packages: ${searchPlan.targetPackages.join(', ')}`);
+            console.log(`📊 Processing ${searchPlan.queries.length} queries concurrently for packages: ${searchPlan.targetPackages.join(', ')}`);
             
-            // Process queries in batches of 8 concurrent sessions
+            // Process queries in batches of 4 concurrent sessions (reduced from 8 for stability)
             const maxConcurrent = 8;
-            const results = await this.processConcurrentQueries(searchPlan.queries, maxConcurrent);
+            const results = await this.processConcurrentQueries(searchPlan.queries, maxConcurrent, progressCallback);
             
             // Flatten all results
             for (const queryResult of results) {
@@ -97,7 +101,7 @@ export class BrowserAgent {
         }
     }
 
-    private async processConcurrentQueries(queries: SearchQuery[], maxConcurrent: number): Promise<QueryResult[]> {
+    private async processConcurrentQueries(queries: SearchQuery[], maxConcurrent: number, progressCallback?: (message: string, queryIndex: number) => void): Promise<QueryResult[]> {
         const results: QueryResult[] = [];
         
         // Process queries in batches of maxConcurrent
@@ -105,6 +109,14 @@ export class BrowserAgent {
             const batch = queries.slice(i, i + maxConcurrent);
             console.log(`🔄 Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(queries.length / maxConcurrent)} with ${batch.length} queries`);
             
+            // Send progress callbacks for each query in the batch
+            batch.forEach((query, batchIndex) => {
+                const queryIndex = i + batchIndex + 1;
+                if (progressCallback) {
+                    progressCallback(`Starting search for "${query.query}" in ${query.package}`, queryIndex);
+                }
+            });
+
             // Process batch concurrently
             const batchPromises = batch.map((query, batchIndex) => 
                 this.processQuery(query, i + batchIndex + 1, queries.length)
@@ -131,8 +143,8 @@ export class BrowserAgent {
             
             // Add delay between batches to avoid overwhelming the API
             if (i + maxConcurrent < queries.length) {
-                console.log(`⏳ Waiting 5 seconds before next batch...`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                console.log(`⏳ Waiting 2 seconds before next batch...`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
         
@@ -199,7 +211,7 @@ export class BrowserAgent {
             console.log(`🚀 Creating browser-use task for package: ${query.package}`);
             const taskId = await this.browserClient.createTask({
                 task: taskDescription,
-                llm: 'o4-mini',
+                llm: 'gemini-2.5-flash',
                 maxSteps: 50,
                 structuredOutput: JSON.stringify(structuredOutput),
                 flashMode: true,

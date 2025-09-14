@@ -100,11 +100,100 @@ export function EventLog({ sessionId }: EventLogProps) {
     }
   }
 
-  // Initialize component with basic events
+  // Initialize component and connect to WebSocket for real-time events
   useEffect(() => {
-    if (events.length === 0) {
-      addEvent('info', 'Event log initialized', { sessionId })
+    if (!sessionId) return
+    
+    // Add initial events
+    addEvent('info', 'Event log initialized', { sessionId })
+    
+    // Create WebSocket connection
+    const socketConnection = io('/', {
+      transports: ['websocket'],
+      forceNew: true
+    })
+    
+    setSocket(socketConnection)
+    
+    // Connection event handlers
+    socketConnection.on('connect', () => {
+      console.log('EventLog: Connected to server')
+      setConnected(true)
       addEvent('info', 'Connected to session', { sessionId })
+      
+      // Join the session room
+      socketConnection.emit('join-session', sessionId)
+    })
+    
+    socketConnection.on('disconnect', () => {
+      console.log('EventLog: Disconnected from server')
+      setConnected(false)
+      addEvent('error', 'Disconnected from session')
+    })
+    
+    socketConnection.on('connect_error', (error) => {
+      console.error('EventLog: Connection error:', error)
+      setConnected(false)
+      addEvent('error', `Connection error: ${error.message}`)
+    })
+    
+    // Listen for the unified session-update event from the server
+    socketConnection.on('session-update', (update) => {
+      console.log('EventLog: Session update:', update)
+      
+      switch (update.type) {
+        case 'status-update':
+          addEvent('status_update', `Session status: ${update.status}`, update, getStatusIcon(update.status))
+          break
+          
+        case 'tool-implemented':
+          addEvent('tool_implemented', `Tool implemented: ${update.tool.name}`, update, <CodeIcon />, 'info')
+          break
+          
+        case 'execution-result':
+          const success = update.result.success !== false
+          addEvent(
+            'execution_result', 
+            `Tool executed: ${success ? 'succeeded' : 'failed'}`, 
+            update, 
+            success ? <PlayIcon /> : <ErrorIcon />,
+            success ? 'success' : 'error'
+          )
+          break
+          
+        case 'implementation-plan':
+          addEvent('info', 'Implementation plan created', update, <BuildIcon />, 'primary')
+          break
+          
+        case 'search-plan':
+          addEvent('info', 'Search plan created', update, <DownloadIcon />, 'primary')
+          break
+          
+        case 'api-specs':
+          addEvent('info', `Found ${update.apiSpecs.length} API specifications`, update, <DownloadIcon />, 'success')
+          break
+          
+        case 'error':
+          // Check if this is a search progress event (special case)
+          if (update.context?.type === 'search-progress') {
+            addEvent('info', update.error, update, <DownloadIcon />, 'primary')
+          } else {
+            addEvent('error', update.error, update, <ErrorIcon />, 'error')
+          }
+          break
+          
+        default:
+          addEvent('info', `Update: ${update.type}`, update, <InfoIcon />, 'primary')
+          break
+      }
+    })
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('EventLog: Cleaning up WebSocket connection')
+      socketConnection.disconnect()
+      setSocket(null)
+      setConnected(false)
     }
   }, [sessionId])
 
@@ -120,7 +209,7 @@ export function EventLog({ sessionId }: EventLogProps) {
   }
   
   return (
-    <Accordion defaultExpanded={false}>
+    <Accordion defaultExpanded={true}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <TimelineIcon sx={{ mr: 1 }} />

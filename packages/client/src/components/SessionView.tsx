@@ -5,21 +5,24 @@ import {
   Card, 
   CardContent,
   Alert,
-  Skeleton
+  Skeleton,
+  IconButton
 } from '@mui/material'
+import { ArrowBack as ArrowBackIcon } from '@mui/icons-material'
 import { useAtomValue, atom } from 'jotai'
 import { SessionStatus } from '@agent-browser/schema'
 import { useSessionVM } from '../hooks/useSessionVM'
 import { WorkflowProgress } from './WorkflowProgress'
 import { RequirementDisplay } from './RequirementDisplay'
 import { ToolsPanel } from './ToolsPanel'
-import { EventLog } from './EventLog'
+import { EventLog} from "./EventLog.tsx";
 
 interface SessionViewProps {
   sessionId: string
+  onBack?: () => void
 }
 
-export function SessionView({ sessionId }: SessionViewProps) {
+export function SessionView({ sessionId, onBack }: SessionViewProps) {
   const sessionVM = useSessionVM(sessionId)
   
   // Always call hooks - use default atoms if sessionVM is null
@@ -36,12 +39,25 @@ export function SessionView({ sessionId }: SessionViewProps) {
       {/* Session Header */}
       <Card>
         <CardContent>
-          <Typography variant="h5" gutterBottom>
-            Computation Session
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Session ID: {sessionId}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            {onBack && (
+              <IconButton 
+                onClick={onBack} 
+                sx={{ mr: 2 }}
+                aria-label="Back to sessions list"
+              >
+                <ArrowBackIcon />
+              </IconButton>
+            )}
+            <Box>
+              <Typography variant="h5" gutterBottom sx={{ mb: 0 }}>
+                Computation Session
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Session ID: {sessionId}
+              </Typography>
+            </Box>
+          </Box>
         </CardContent>
       </Card>
       
@@ -57,14 +73,14 @@ export function SessionView({ sessionId }: SessionViewProps) {
           The workflow has failed. Please check the event log for details or try creating a new session.
         </Alert>
       )}
-      
+
+        {/* Event Log */}
+        <EventLog sessionId={sessionId} />
       {/* Tools Panel - only show when tools are available */}
       {tools.length > 0 && (
         <ToolsPanel sessionVM={sessionVM} />
       )}
       
-      {/* Event Log */}
-      {/*<EventLog sessionId={sessionId} />*/}
     </Box>
   )
 }
