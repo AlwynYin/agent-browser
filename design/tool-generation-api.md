@@ -1,0 +1,412 @@
+# Tool Generation Service API Specification
+
+## Overview
+This document defines the API specification for the Tool Generation Service
+
+Users generate code by passing tool requirements in natural language. A `job` is created, which generate tools asynchronously. User can choose two ways to monitor the job: poll for job status in a loop or ~~receive job status updates using websocket~~ (WIP)
+
+Each tool will be a python file in a shared filesystem between user and client (in the simplest case, user and client runs on the same system)
+
+## Service Endpoints
+
+
+### Check Health
+
+#### `GET /api/v1/health`
+Health check endpoint.
+
+**Response:**
+```typescript
+interface HealthResponse {
+    status: 'healthy' | 'unhealthy'
+    timestamp: string
+    version: string
+    dependencies: {
+        ai_service: 'available' | 'unavailable'
+        database: 'available' | 'unavailable'
+    }
+}
+```
+
+### Job Management
+
+#### `POST /api/v1/jobs`
+Create a new tool generation job.
+
+**Request Body:**
+```typescript
+interface ToolGenerationRequest {
+    toolRequirements: ToolRequirement[]
+    metadata?: RequestMetadata
+}
+```
+
+**Response:**
+```typescript
+interface JobResponse {
+    jobId: string
+    status: JobStatus
+    createdAt: string
+    updatedAt: string
+    progress: JobProgress
+}
+```
+
+#### `GET /api/v1/jobs/{jobId}`
+Get job status and metadata.
+
+**Response:** `JobResponse`
+
+
+## Data Models
+
+### Input Objects
+
+#### `ToolRequirement`
+```typescript
+interface ToolRequirement {
+    description: string           // Natural language description of the tool
+    input: string                 // Natural language description of the input
+    output: string                // Natural language description of the output
+}
+```
+
+#### `RequestMetadata`
+```typescript
+interface RequestMetadata {
+    sessionId?: string            // Optional session tracking
+    clientId?: string             // Client identifier
+}
+```
+
+### Output Objects
+
+#### `JobResponse`
+```typescript
+interface JobResponse {
+    jobId: string
+    status: JobStatus
+    createdAt: string             // ISO timestamp
+    updatedAt: string             // ISO timestamp  
+    progress: JobProgress
+    toolFiles?: ToolFile[]        // Generated tool files (only when completed)
+    failures?: ToolGenerationFailure[]  // Failed tool generations (only when completed)
+    summary?: GenerationSummary   // Job summary (only when completed)
+}
+
+type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+interface JobProgress {
+    total: number                 // Total tools to generate
+    completed: number             // Successfully generated
+    failed: number                // Failed generations
+    inProgress: number            // Currently being generated
+    currentTool?: string          // Name of tool currently being generated
+}
+
+interface ToolFile {
+    toolId: string                // Unique tool identifier
+    fileName: string              // e.g., "calculate_molecular_weight.py"
+    filePath: string              // Full path: "tools/calculate_molecular_weight.py"
+    description: string           // Tool description from requirement
+    createdAt: string             // ISO timestamp
+}
+```
+
+
+#### `ToolGenerationFailure`
+```typescript
+interface ToolGenerationFailure {
+    toolRequirement: ToolRequirement
+    error: string
+}
+```
+
+#### `GenerationSummary`
+```typescript
+interface GenerationSummary {
+    totalRequested: number
+    successful: number
+    failed: number
+}
+```
+
+### Error Objects
+
+#### `ErrorResponse`
+```typescript
+interface ErrorResponse {
+    error: string
+    code: ErrorCode
+    details?: any
+    timestamp: string
+    jobId?: string
+    requestId?: string            // For support/debugging
+}
+
+type ErrorCode = 
+    | 'INVALID_REQUEST'           // Malformed request
+    | 'INVALID_TOOL_REQUIREMENT'  // Tool requirement validation failed
+    | 'INSUFFICIENT_API_SPECS'    // Not enough API documentation
+    | 'GENERATION_TIMEOUT'        // Tool generation timed out
+    | 'AI_SERVICE_ERROR'          // OpenAI/AI service error
+    | 'AI_SERVICE_RATE_LIMITED'   // Rate limited by AI service
+    | 'JOB_NOT_FOUND'            // Job ID doesn't exist
+    | 'JOB_CANCELLED'            // Job was cancelled
+    | 'JOB_ALREADY_COMPLETED'    // Job already finished
+    | 'RATE_LIMIT_EXCEEDED'      // Too many requests
+    | 'SERVICE_UNAVAILABLE'      // Service temporarily unavailable
+    | 'INTERNAL_ERROR'           // Unexpected server error
+```
+
+## Usage Examples
+
+### Tool Generation
+
+```bash
+# Create job
+curl -X POST http://localhost:8002/api/v1/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "toolRequirements": [
+      {
+        "description": "I need a tool that calculates the molecular weight of a chemical compound. Please use RDKit if available.",
+        "input": "SMILES string of the molecule",
+        "output": "molecular weight"
+      }
+    ],
+    "metadata": {
+      "sessionId": "session_123",
+      "clientId": "web-app"
+    }
+  }'
+
+# Response
+{
+  "jobId": "job_abc123",
+  "status": "pending",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "updatedAt": "2024-01-15T10:30:00Z",
+  "progress": {
+    "total": 1,
+    "completed": 0,
+    "failed": 0,
+    "inProgress": 0,
+    "currentTool": null
+  }
+}
+```
+
+### Check Job Status
+
+```bash
+curl http://localhost:8002/api/v1/jobs/job_abc123
+
+# Response
+{
+  "jobId": "job_abc123", 
+  "status": "running",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "updatedAt": "2024-01-15T10:30:45Z",
+  "progress": {
+    "total": 1,
+    "completed": 0,
+    "failed": 0,
+    "inProgress": 1,
+    "currentTool": "calculate_molecular_weight"
+  }
+}
+```
+
+### Retrieve Generated Tools
+
+```bash
+curl http://localhost:8002/api/v1/jobs/job_abc123
+
+# Response (when completed)
+{
+  "jobId": "job_abc123",
+  "status": "completed",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "updatedAt": "2024-01-15T10:31:30Z",
+  "progress": {
+    "total": 1,
+    "completed": 1,
+    "failed": 0,
+    "inProgress": 0,
+    "currentTool": null
+  },
+  "toolFiles": [
+    {
+      "toolId": "tool_xyz789",
+      "fileName": "calculate_molecular_weight.py",
+      "filePath": "tools/calculate_molecular_weight.py",
+      "description": "Calculate molecular weight from SMILES string using RDKit",
+      "createdAt": "2024-01-15T10:31:30Z"
+    }
+  ],
+  "failures": [],
+  "summary": {
+    "totalRequested": 1,
+    "successful": 1,
+    "failed": 0
+  }
+}
+```
+
+### Python Client Example
+
+```python
+import requests
+import time
+from typing import List, Dict, Any
+
+class ToolGenerationClient:
+    def __init__(self, base_url: str = "http://localhost:8002"):
+        self.base_url = base_url
+    
+    def create_job(self, tool_requirements: List[Dict], 
+                   metadata: Dict = None) -> str:
+        """Create a new tool generation job and return job ID."""
+        payload = {
+            "toolRequirements": tool_requirements
+        }
+        if metadata:
+            payload["metadata"] = metadata
+            
+        response = requests.post(f"{self.base_url}/api/v1/jobs", json=payload)
+        response.raise_for_status()
+        return response.json()["jobId"]
+    
+    def wait_for_completion(self, job_id: str, poll_interval: int = 2) -> Dict:
+        """Poll job status until completion."""
+        while True:
+            status = self.get_job_status(job_id)
+            progress = status['progress']
+            print(f"Progress: {progress['completed']}/{progress['total']} tools")
+            
+            if status["status"] in ["completed", "failed", "cancelled"]:
+                return status
+                
+            time.sleep(poll_interval)
+    
+    def get_job_status(self, job_id: str) -> Dict:
+        """Get current job status."""
+        response = requests.get(f"{self.base_url}/api/v1/jobs/{job_id}")
+        response.raise_for_status()
+        return response.json()
+    
+    def get_tools(self, job_id: str) -> Dict:
+        """Get generated tools for completed job."""
+        response = requests.get(f"{self.base_url}/api/v1/jobs/{job_id}/tools")
+        response.raise_for_status()
+        return response.json()
+
+# Usage example
+client = ToolGenerationClient()
+
+# Submit job
+job_id = client.create_job(
+    tool_requirements=[...],
+    metadata={"clientId": "python-script"}
+)
+
+# Wait for completion
+final_status = client.wait_for_completion(job_id)
+
+if final_status["status"] == "completed":
+    # Access generated tool files
+    tool_files = final_status.get("toolFiles", [])
+    failures = final_status.get("failures", [])
+    
+    print(f"Generated {len(tool_files)} tool files successfully")
+    for tool_file in tool_files:
+        print(f"- {tool_file['fileName']} at {tool_file['filePath']}")
+    
+    if failures:
+        print(f"Failed to generate {len(failures)} tools")
+else:
+    print(f"Job failed with status: {final_status['status']}")
+```
+
+## Tool File Storage Design
+
+### Directory Structure
+Tools are by default placed under `tools/` directory. `metadata/registry.json` contains mapping of each code to its location. This file should always be updated when tool is moved to another location.
+
+Global dependency list is stored in `metadata/dependencies.json`
+```
+tools/<name>.py
+metadata/registry.json
+metadata/dependencies.json
+```
+
+### File Naming Convention
+```
+{snake_case_tool_name}.py
+```
+Examples:
+- `calculate_molecular_weight.py`
+- `visualize_protein_structure.py`  
+- `convert_file_format.py`
+
+### Python File Structure
+```python
+"""
+Tool: Calculate Molecular Weight
+Generated: 2024-01-15T10:31:30Z
+Job ID: job_abc123
+Description: Calculate molecular weight from SMILES string using RDKit
+
+Dependencies: rdkit
+"""
+
+def calculate_molecular_weight(smiles):
+    """
+    Calculate molecular weight of a chemical compound from SMILES string.
+    
+    Args:
+        smiles (str): SMILES string representation of the molecule
+        
+    Returns:
+        dict: Dictionary containing molecular weight
+    """
+    from rdkit import Chem
+    from rdkit.Chem import Descriptors
+    
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError(f"Invalid SMILES string: {smiles}")
+        
+        molecular_weight = Descriptors.MolWt(mol)
+        return {'molecular_weight': molecular_weight}
+    except Exception as e:
+        raise ValueError(f"Error calculating molecular weight: {str(e)}")
+
+# TOOL_ID: tool_xyz789
+```
+
+### Metadata Management
+
+#### Tool Registry (`metadata/registry.json`)
+```json
+{
+  "tool_xyz789": {
+    "fileName": "calculate_molecular_weight.py",
+    "filePath": "tools/calculate_molecular_weight.py",
+    "description": "Calculate molecular weight from SMILES string using RDKit"
+  }
+}
+```
+
+#### Global Dependencies (`metadata/dependencies.json`)
+```json
+[
+  "rdkit",
+  "numpy",
+  "pandas",
+  "matplotlib"
+]
+```
+
