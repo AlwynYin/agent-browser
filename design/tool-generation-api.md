@@ -1,11 +1,13 @@
 # Tool Generation Service API Specification
 
 ## Overview
-This document defines the API specification for the Tool Generation Service
+This document defines the API specification for the Tool Generation Service that integrates with the SimpleTooling framework.
 
 Users generate code by passing tool requirements in natural language. A `job` is created, which generate tools asynchronously. User can choose two ways to monitor the job: poll for job status in a loop or ~~receive job status updates using websocket~~ (WIP)
 
-Each tool will be a python file in a shared filesystem between user and client (in the simplest case, user and client runs on the same system)
+Each tool will be a python file that integrates with SimpleTooling's `@toolset.add()` decorator pattern and is automatically registered as an HTTP endpoint. Tools are stored in a shared filesystem and immediately available through the SimpleTooling server.
+
+**Note**: This specification is supplemented by the comprehensive [Tool Service Integration Design](./tool_service_design.md) which provides detailed architecture and implementation guidance.
 
 ## Service Endpoints
 
@@ -107,8 +109,10 @@ interface JobProgress {
 interface ToolFile {
     toolId: string                // Unique tool identifier
     fileName: string              // e.g., "calculate_molecular_weight.py"
-    filePath: string              // Full path: "tools/calculate_molecular_weight.py"
+    filePath: string              // Full path: "tools/generated/calculate_molecular_weight.py"
     description: string           // Tool description from requirement
+    endpoint?: string             // SimpleTooling HTTP endpoint URL
+    registered: boolean           // Whether registered with SimpleTooling
     createdAt: string             // ISO timestamp
 }
 ```
@@ -240,8 +244,10 @@ curl http://localhost:8002/api/v1/jobs/job_abc123
     {
       "toolId": "tool_xyz789",
       "fileName": "calculate_molecular_weight.py",
-      "filePath": "tools/calculate_molecular_weight.py",
+      "filePath": "tools/generated/calculate_molecular_weight.py",
       "description": "Calculate molecular weight from SMILES string using RDKit",
+      "endpoint": "http://localhost:8000/tool/calculate_molecular_weight",
+      "registered": true,
       "createdAt": "2024-01-15T10:31:30Z"
     }
   ],
@@ -331,14 +337,21 @@ else:
 
 ## Tool File Storage Design
 
-### Directory Structure
-Tools are by default placed under `tools/` directory. `metadata/registry.json` contains mapping of each code to its location. This file should always be updated when tool is moved to another location.
+### Directory Structure (SimpleTooling Integration)
+Tools are placed in organized directories under `tools/` with automatic SimpleTooling registration. Generated tools go in `tools/generated/` while custom uploaded tools go in `tools/custom/`.
 
-Global dependency list is stored in `metadata/dependencies.json`
 ```
-tools/<name>.py
-metadata/registry.json
-metadata/dependencies.json
+simpletooling_template/
+├── tools/
+│   ├── __init__.py
+│   ├── toolset.py                    # Shared toolset instance
+│   ├── calculator.py                 # Pre-existing tools
+│   ├── generated/                    # Auto-generated tools
+│   ├── calculate_molecular_weight.py
+│   └── metadata/
+│       ├── registry.json             # Tool registry with endpoints
+│       ├── dependencies.json         # Global dependencies
+└── main.py
 ```
 
 ### File Naming Convention
@@ -350,41 +363,47 @@ Examples:
 - `visualize_protein_structure.py`  
 - `convert_file_format.py`
 
-### Python File Structure
+### Python File Structure (SimpleTooling Integration)
 ```python
 """
-Tool: Calculate Molecular Weight
-Generated: 2024-01-15T10:31:30Z
-Job ID: job_abc123
+Generated Tool: Calculate Molecular Weight
+Created: 2024-01-15T10:31:30Z
+Tool ID: tool_xyz789
 Description: Calculate molecular weight from SMILES string using RDKit
-
 Dependencies: rdkit
 """
 
-def calculate_molecular_weight(smiles):
+from tools.toolset import toolset
+from typing import Dict
+
+@toolset.add()
+def calculate_molecular_weight(smiles: str) -> Dict[str, float]:
     """
     Calculate molecular weight of a chemical compound from SMILES string.
-    
-    Args:
-        smiles (str): SMILES string representation of the molecule
-        
-    Returns:
-        dict: Dictionary containing molecular weight
+
+    :param smiles: SMILES string representation of the molecule
+    :return: Dictionary containing molecular weight
     """
     from rdkit import Chem
     from rdkit.Chem import Descriptors
-    
+
     try:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             raise ValueError(f"Invalid SMILES string: {smiles}")
-        
+
         molecular_weight = Descriptors.MolWt(mol)
         return {'molecular_weight': molecular_weight}
     except Exception as e:
         raise ValueError(f"Error calculating molecular weight: {str(e)}")
 
-# TOOL_ID: tool_xyz789
+# Tool metadata for service tracking
+__TOOL_METADATA__ = {
+    "tool_id": "tool_xyz789",
+    "job_id": "job_abc123",
+    "generated_at": "2024-01-15T10:31:30Z",
+    "dependencies": ["rdkit"]
+}
 ```
 
 ### Metadata Management
@@ -393,9 +412,16 @@ def calculate_molecular_weight(smiles):
 ```json
 {
   "tool_xyz789": {
+    "name": "calculate_molecular_weight",
     "fileName": "calculate_molecular_weight.py",
-    "filePath": "tools/calculate_molecular_weight.py",
-    "description": "Calculate molecular weight from SMILES string using RDKit"
+    "filePath": "tools/generated/chemistry/calculate_molecular_weight.py",
+    "category": "chemistry",
+    "description": "Calculate molecular weight from SMILES string using RDKit",
+    "endpoint": "http://localhost:8000/tool/calculate_molecular_weight",
+    "dependencies": ["rdkit"],
+    "createdAt": "2024-01-15T10:31:30Z",
+    "registeredAt": "2024-01-15T10:31:45Z",
+    "jobId": "job_abc123"
   }
 }
 ```
