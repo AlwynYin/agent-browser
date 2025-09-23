@@ -14,7 +14,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs
 
 # Install Codex CLI globally
-RUN npm install -g @matterlab/codex
+RUN npm install -g @openai/codex
 
 # Install uv
 RUN pip install uv
