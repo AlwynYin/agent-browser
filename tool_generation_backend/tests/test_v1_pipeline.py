@@ -22,7 +22,7 @@ async def test_tool_generation_pipeline():
     """Test the complete tool generation pipeline."""
 
     # Configuration
-    BASE_URL = "http://localhost:8000"
+    BASE_URL = "https://"
 
     # Test job request matching design spec
     job_request = {

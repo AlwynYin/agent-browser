@@ -33,11 +33,11 @@ async def lifespan(app: FastAPI):
     await init_database(settings.mongodb_url)
     logging.info("✅ Database connection established")
 
-    # # Initialize SimpleTooling integration
-    # app.state.simpletooling = SimpleToolingClient(
-    #     base_url=settings.simpletooling_url
-    # )
-    # logging.info(f"🔧 SimpleTooling client initialized: {settings.simpletooling_url}")
+    # Initialize SimpleTooling integration
+    app.state.simpletooling = SimpleToolingClient(
+        base_url=settings.simpletooling_url
+    )
+    logging.info(f"🔧 SimpleTooling client initialized: {settings.simpletooling_url}")
 
     # Initialize WebSocket manager
     app.state.websocket_manager = WebSocketManager()
