@@ -19,8 +19,8 @@ RUN npm install -g @openai/codex
 # Add npm global bin to PATH
 ENV PATH="/usr/local/bin:${PATH}"
 
-# Verify Codex CLI installation and show npm global bin path
-RUN npm bin -g && ls -la $(npm bin -g) && which codex && codex --version
+# Verify Codex CLI installation and show npm global paths
+RUN npm config get prefix && ls -la /usr/local/bin/ && which codex && codex --version
 
 # Install uv
 RUN pip install uv
