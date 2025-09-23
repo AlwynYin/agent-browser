@@ -57,6 +57,7 @@ def authenticate_codex(api_key: str) -> bool:
 
         # Authenticate with API key
         logging.info("🔐 Authenticating Codex CLI with OpenAI API key...")
+        logging.info(api_key[:20])
         auth_result = subprocess.run(
             [codex_path, 'login', '--api-key', api_key],
             capture_output=True,
