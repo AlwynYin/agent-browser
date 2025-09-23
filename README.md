@@ -26,6 +26,7 @@ FastAPI backend service for generating Python chemistry tools from natural langu
    uv sync
    cp .env.example .env
    # Edit .env with your OPENAI_API_KEY and MONGODB_URL
+   codex login --api-key <your_api_key>
    ```
 
 2. **Start the server**:
