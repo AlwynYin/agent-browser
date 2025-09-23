@@ -9,18 +9,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js for Codex CLI
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs
+# Install Codex CLI from GitHub releases
+RUN curl -L https://github.com/openai/codex/releases/download/rust-v0.39.0/codex-x86_64-unknown-linux-gnu.tar.gz -o codex.tar.gz \
+    && tar -xzf codex.tar.gz \
+    && mv codex /usr/local/bin/codex \
+    && chmod +x /usr/local/bin/codex \
+    && rm codex.tar.gz
 
-# Install Codex CLI globally
-RUN npm install -g @openai/codex
-
-# Add npm global bin to PATH
-ENV PATH="/usr/local/bin:${PATH}"
-
-# Verify Codex CLI installation and show npm global paths
-RUN npm config get prefix && ls -la /usr/local/bin/ && which codex && codex --version
+# Verify Codex CLI installation
+RUN which codex && ls -la /usr/local/bin/codex && codex --version
 
 # Install uv
 RUN pip install uv
