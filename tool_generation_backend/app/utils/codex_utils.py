@@ -53,8 +53,8 @@ async def execute_codex_implement(
         # Build command - change to tool_service directory first
         cmd = [
             "codex", "exec",
-            "--full-auto",
             "--model", "gpt-5",
+            "--dangerously-bypass-approvals-and-sandbox",
             "--cd", str(tool_service_dir),
             prompt
         ]
@@ -165,7 +165,7 @@ async def execute_codex_browse(
         cmd = [
             "codex", "exec",
             "--model", "gpt-5",
-            "--dangerously - bypass - approvals-and-sandbox",
+            "--dangerously-bypass-approvals-and-sandbox",
             "--cd", str(workspaces_dir),
             browse_prompt
         ]
