@@ -16,6 +16,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
 # Install Codex CLI globally
 RUN npm install -g @openai/codex
 
+# Add npm global bin to PATH
+ENV PATH="/usr/local/bin:${PATH}"
+
+# Verify Codex CLI installation and show npm global bin path
+RUN npm bin -g && ls -la $(npm bin -g) && which codex && codex --version
+
 # Install uv
 RUN pip install uv
 
