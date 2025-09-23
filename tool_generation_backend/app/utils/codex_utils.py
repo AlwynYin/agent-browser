@@ -211,6 +211,7 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
     Returns:
         Dict with command result
     """
+    import os
     try:
         logger.info(f"🔍 Running Codex command: {' '.join(cmd)}")
 
@@ -220,7 +221,6 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
         if not codex_path:
             logger.error("❌ Codex executable not found in PATH")
             # Try common locations
-            import os
             common_paths = ['/usr/local/bin/codex', '/usr/bin/codex', '/bin/codex']
             for path in common_paths:
                 if os.path.exists(path):
