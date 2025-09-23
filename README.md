@@ -1,140 +1,108 @@
-# Agent Browser
+# Tool Generation Service Backend
 
-A tool-based agentic system for chemistry computation that automatically implements Python tools based on user requirements.
+FastAPI backend service for generating Python chemistry tools from natural language requirements using OpenAI and Codex.
 
-## Phase 1 Architecture
+## Features
 
-The system follows a simplified 5-step workflow:
-
-1. **User Input**: User provides chemistry computation requirement
-2. **Orchestrator Agent**: Generates implementation plan and search plan
-3. **Browser Agent**: Searches for API documentation using browser-use
-4. **Engineer Agent**: Implements Python tools based on search results
-5. **Execution**: Calls tools to provide results to user
-
-## Tech Stack
-
-- **Frontend**: React 19.1.0 + TypeScript + Vite 7.0.0 + Material-UI v7.2.0 + Jotai
-- **Backend**: Express.js + TypeScript + MongoDB + Socket.IO
-- **Agents**: OpenAI API integration + browser-use API
-- **Build System**: PNPM workspaces + coordinated dev/build scripts
+- **Job-based tool generation** with natural language requirements
+- **OpenAI Agent SDK** integration for intelligent tool creation
+- **Codex CLI** integration for Python code generation
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+
-- PNPM 10.11.1+
-- MongoDB (local or cloud)
+- Python 3.13
+- uv (Python package manager)
+- MongoDB
 - OpenAI API key
+- Codex CLI (`npm install -g @matterlab/codex`)
 
 ### Installation
 
-1. Clone the repository
-2. Install dependencies:
+1. **Setup environment**:
    ```bash
-   pnpm install
-   ```
-
-3. Copy environment configuration:
-   ```bash
+   cd tool_generation_backend
+   uv sync
    cp .env.example .env
+   # Edit .env with your OPENAI_API_KEY and MONGODB_URL
    ```
 
-4. Edit `.env` with your configuration:
-   - Add your OpenAI API key
-   - Configure MongoDB URL
-   - Set Python execution API URL (if available)
+2. **Start the server**:
+   ```bash
+   uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
 
-### Development
+3. **Access the API**:
+    - API: http://localhost:8000
+    - Documentation: http://localhost:8000/docs
+    - Health check: http://localhost:8000/api/v1/health
 
-Start all services in development mode:
+## API Usage
+
+### Generate Tools
+
+**Submit job:**
 ```bash
-pnpm dev
+curl -X POST http://localhost:8000/api/v1/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "toolRequirements": [
+      {
+        "description": "Calculate molecular weight from SMILES using RDKit",
+        "input": "SMILES string",
+        "output": "molecular weight in g/mol"
+      }
+    ],
+    "metadata": {
+      "clientId": "my-app"
+    }
+  }'
 ```
 
-This will start:
-- Client: http://localhost:3000
-- Server: http://localhost:3001
-- Schema: Watch mode for changes
-
-### Build
-
-Build all packages for production:
+**Check status:**
 ```bash
-pnpm build
+curl http://localhost:8000/api/v1/jobs/{job_id}
 ```
 
-## Project Structure
+**Response includes:**
+- Job status (`pending`, `implementing`, `completed`)
+- Progress tracking (`0/1`, `1/1`)
+- Generated Python code (when completed)
+- Tool file metadata and endpoints
+
+## Configuration
+
+### Required Variables
+- `OPENAI_API_KEY` - OpenAI API key
+- `MONGODB_URL` - MongoDB connection URL
+
+### Optional Variables
+- `TOOL_SERVICE_DIR=tool_service` - Tool generation directory
+- `TOOLS_DIR=tools` - Generated tools subdirectory
+- `SIMPLETOOLING_URL=http://localhost:8000` - SimpleTooling service URL
+
+## Generated Tools
+
+Tools are created in `../tool_service/tools/` as:
+- Self-contained Python files with `@toolset.add()` decorators
+- Comprehensive error handling and type hints
+- Integration with chemistry libraries (RDKit, ASE, PyMatGen)
+- Automatic registration with SimpleTooling service
+
+## Testing
+
+```bash
+# Run the pipeline test
+python tests/test_v1_pipeline.py
+```
+
+## Architecture
 
 ```
-packages/
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── components/     # UI components
-│   │   ├── atoms/         # Jotai state atoms
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── utils/         # API client and utilities
-│   │   └── types/         # TypeScript type definitions
-├── server/                 # Express.js backend
-│   ├── src/
-│   │   ├── routes/        # API route handlers
-│   │   ├── services/      # Business logic services
-│   │   ├── repositories/  # Data access layer
-│   │   ├── middleware/    # Express middleware
-│   │   └── websocket/     # Socket.IO handlers
-├── schema/                 # Shared data models and types
-└── agents/                 # Agent implementations (future)
-    ├── orchestrator/
-    ├── browser/
-    └── engineer/
+Client → POST /jobs → OpenAI Agent → Codex → Generated Tools → SimpleTooling
+   ↓         ↓           ↓           ↓          ↓               ↓
+Request   MongoDB    Tool Design   Python   File System   HTTP APIs
 ```
 
-## Development Progress
-
-### Phase 1.1: Project Foundation ✅
-- [x] PNPM monorepo structure
-- [x] TypeScript configuration
-- [x] Core data models
-- [x] Express.js server setup
-- [x] React frontend setup
-
-### Phase 1.2: Agent Implementation (Next)
-- [ ] Orchestrator Agent with OpenAI
-- [ ] Browser Agent with browser-use API
-- [ ] Engineer Agent with code generation
-- [ ] Phase 1 workflow integration
-
-### Phase 1.3: Testing & Polish (Future)
-- [ ] End-to-end workflow testing
-- [ ] Error handling and recovery
-- [ ] UI polish and user experience
-
-## API Endpoints
-
-- `POST /api/sessions` - Create new computation session
-- `GET /api/sessions/:id` - Get session details
-- `GET /api/sessions/user/:userId` - Get user sessions
-- `POST /api/sessions/:id/tools/:toolId/execute` - Execute tool
-- `GET /health` - Health check
-
-## WebSocket Events
-
-Real-time updates via Socket.IO:
-- `session-update` - Session status and progress updates
-- `tool-implemented` - New tool implementations
-- `execution-result` - Tool execution results
-
-## Contributing
-
-This project follows Forest's architectural patterns and conventions. When contributing:
-
-1. Follow the existing MVVM pattern with Jotai
-2. Use TypeScript strictly
-3. Follow Material-UI design patterns
-4. Add proper error handling
-5. Update tests as needed
-
-## License
-
-[License TBD]
+The service transforms natural language requirements into production-ready Python chemistry tools through an agentic multi-step process.
