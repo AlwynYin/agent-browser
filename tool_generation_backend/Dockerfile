@@ -31,6 +31,15 @@ COPY . .
 # Create tool service directory to match expected path structure
 RUN mkdir -p /app/tool_service/tools
 
+# Authenticate Codex CLI with OpenAI API key
+# This expects OPENAI_API_KEY to be set as a build argument or environment variable
+ARG OPENAI_API_KEY
+RUN if [ -n "$OPENAI_API_KEY" ]; then \
+        codex login --api-key "$OPENAI_API_KEY"; \
+    else \
+        echo "Warning: OPENAI_API_KEY not provided during build. Codex authentication will be required at runtime."; \
+    fi
+
 # Expose port
 EXPOSE 8000
 
