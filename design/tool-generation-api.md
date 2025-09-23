@@ -111,6 +111,7 @@ interface ToolFile {
     fileName: string              // e.g., "calculate_molecular_weight.py"
     filePath: string              // Full path: "tools/generated/calculate_molecular_weight.py"
     description: string           // Tool description from requirement
+    code: string                  // Generated Python code content
     endpoint?: string             // SimpleTooling HTTP endpoint URL
     registered: boolean           // Whether registered with SimpleTooling
     createdAt: string             // ISO timestamp
@@ -246,6 +247,7 @@ curl http://localhost:8002/api/v1/jobs/job_abc123
       "fileName": "calculate_molecular_weight.py",
       "filePath": "tools/generated/calculate_molecular_weight.py",
       "description": "Calculate molecular weight from SMILES string using RDKit",
+      "code": "from tools.toolset import toolset\nfrom typing import Dict\n\n@toolset.add()\ndef calculate_molecular_weight(smiles: str) -> Dict[str, float]:\n    \"\"\"Calculate molecular weight of a chemical compound from SMILES string.\"\"\"\n    from rdkit import Chem\n    from rdkit.Chem import Descriptors\n    \n    try:\n        mol = Chem.MolFromSmiles(smiles)\n        if mol is None:\n            raise ValueError(f\"Invalid SMILES string: {smiles}\")\n        \n        molecular_weight = Descriptors.MolWt(mol)\n        return {'molecular_weight': molecular_weight}\n    except Exception as e:\n        raise ValueError(f\"Error calculating molecular weight: {str(e)}\")",
       "endpoint": "http://localhost:8000/tool/calculate_molecular_weight",
       "registered": true,
       "createdAt": "2024-01-15T10:31:30Z"
@@ -301,12 +303,6 @@ class ToolGenerationClient:
         response = requests.get(f"{self.base_url}/api/v1/jobs/{job_id}")
         response.raise_for_status()
         return response.json()
-    
-    def get_tools(self, job_id: str) -> Dict:
-        """Get generated tools for completed job."""
-        response = requests.get(f"{self.base_url}/api/v1/jobs/{job_id}/tools")
-        response.raise_for_status()
-        return response.json()
 
 # Usage example
 client = ToolGenerationClient()
@@ -321,16 +317,23 @@ job_id = client.create_job(
 final_status = client.wait_for_completion(job_id)
 
 if final_status["status"] == "completed":
-    # Access generated tool files
+    # Access generated tool files from the JobResponse
     tool_files = final_status.get("toolFiles", [])
     failures = final_status.get("failures", [])
-    
+    summary = final_status.get("summary", {})
+
     print(f"Generated {len(tool_files)} tool files successfully")
     for tool_file in tool_files:
         print(f"- {tool_file['fileName']} at {tool_file['filePath']}")
-    
+        print(f"  Code length: {len(tool_file['code'])} characters")
+        print(f"  Registered: {tool_file['registered']}")
+        # Access the generated Python code directly
+        # python_code = tool_file['code']
+
     if failures:
         print(f"Failed to generate {len(failures)} tools")
+
+    print(f"Summary: {summary.get('successful', 0)}/{summary.get('totalRequested', 0)} successful")
 else:
     print(f"Job failed with status: {final_status['status']}")
 ```

@@ -1,3 +1,0 @@
-# Ignore individual package services - deploy only as monolith
-packages/client/package.json
-packages/schema/package.json
