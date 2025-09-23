@@ -165,8 +165,7 @@ async def execute_codex_browse(
         cmd = [
             "codex", "exec",
             "--model", "gpt-5",
-            "--full-auto",
-            "--skip-git-repo-check",
+            "--dangerously - bypass - approvals-and-sandbox",
             "--cd", str(workspaces_dir),
             browse_prompt
         ]
