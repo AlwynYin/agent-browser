@@ -1,5 +1,5 @@
-# Use Python 3.11 slim image
-FROM python:3.11-slim
+# Use Python 3.13 slim image
+FROM python:3.13-slim
 
 # Set working directory to match local structure
 WORKDIR /app/tool_generation_backend
