@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
 # Install Codex CLI from GitHub releases
 RUN curl -L https://github.com/openai/codex/releases/download/rust-v0.39.0/codex-x86_64-unknown-linux-gnu.tar.gz -o codex.tar.gz \
     && tar -xzf codex.tar.gz \
-    && mv codex /usr/local/bin/codex \
+    && mv codex-x86_64-unknown-linux-gnu /usr/local/bin/codex \
     && chmod +x /usr/local/bin/codex \
     && rm codex.tar.gz
 
