@@ -5,6 +5,7 @@ Chemistry computation tool generation platform.
 
 from contextlib import asynccontextmanager
 import logging
+import subprocess
 from typing import Dict, Any
 
 from fastapi import FastAPI, WebSocket
@@ -20,6 +21,38 @@ from app.middleware.logging import setup_logging_middleware
 from simpletooling_integration import SimpleToolingClient
 
 
+def authenticate_codex(api_key: str) -> bool:
+    """Authenticate Codex CLI with OpenAI API key."""
+    try:
+        # Check if codex is available
+        result = subprocess.run(['which', 'codex'], capture_output=True, text=True)
+        if result.returncode != 0:
+            logging.error("❌ Codex CLI not found in PATH")
+            return False
+
+        # Authenticate with API key
+        result = subprocess.run(
+            ['codex', 'login', '--api-key', api_key],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            logging.info("✅ Codex CLI authenticated successfully")
+            return True
+        else:
+            logging.error(f"❌ Codex authentication failed: {result.stderr}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        logging.error("❌ Codex authentication timed out")
+        return False
+    except Exception as e:
+        logging.error(f"❌ Codex authentication error: {e}")
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown."""
@@ -32,6 +65,14 @@ async def lifespan(app: FastAPI):
     # Initialize database connection
     await init_database(settings.mongodb_url)
     logging.info("✅ Database connection established")
+
+    # Authenticate Codex CLI
+    if settings.openai_api_key:
+        codex_auth_success = authenticate_codex(settings.openai_api_key)
+        if not codex_auth_success:
+            logging.warning("⚠️ Codex authentication failed - tool generation may not work")
+    else:
+        logging.warning("⚠️ No OpenAI API key provided - Codex authentication skipped")
 
     # Initialize SimpleTooling integration
     app.state.simpletooling = SimpleToolingClient(
