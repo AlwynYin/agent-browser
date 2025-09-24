@@ -213,7 +213,7 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
     """
     import os
     try:
-        logger.info(f"🔍 Running Codex command: {' '.join(cmd)}")
+        logger.debug(f"Running Codex command: {' '.join(cmd)}")
 
         # Check if codex executable exists
         import shutil
@@ -224,7 +224,6 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
             common_paths = ['/usr/local/bin/codex', '/usr/bin/codex', '/bin/codex']
             for path in common_paths:
                 if os.path.exists(path):
-                    logger.info(f"🔍 Found codex at: {path}")
                     codex_path = path
                     break
             else:
@@ -234,16 +233,12 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
                     "stdout": "",
                     "stderr": ""
                 }
-        else:
-            logger.info(f"✅ Codex found at: {codex_path}")
 
         # Set OPENAI_API_KEY environment variable if not set
         env = os.environ.copy()
-        logger.info(f"🔍 Environment has OPENAI_API_KEY: {'OPENAI_API_KEY' in env}")
 
         # Replace 'codex' with full path in command
         cmd_with_path = [codex_path] + cmd[1:] if cmd[0] == 'codex' else cmd
-        logger.info(f"🔍 Executing command with full path: {' '.join(cmd_with_path)}")
 
         process = await asyncio.create_subprocess_exec(
             *cmd_with_path,
@@ -269,12 +264,6 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
         stdout_str = stdout.decode('utf-8') if stdout else ""
         stderr_str = stderr.decode('utf-8') if stderr else ""
 
-        logger.info(f"🔍 Command completed with return code: {process.returncode}")
-        if stdout_str:
-            logger.info(f"🔍 Command stdout (first 500 chars): {stdout_str[:500]}")
-        if stderr_str:
-            logger.info(f"🔍 Command stderr (first 500 chars): {stderr_str[:500]}")
-
         if process.returncode == 0:
             logger.info("✅ Codex command completed successfully")
             return {
@@ -285,6 +274,8 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
             }
         else:
             logger.error(f"❌ Codex command failed with return code {process.returncode}")
+            if stderr_str:
+                logger.error(f"Error: {stderr_str[:200]}...")
             return {
                 "success": False,
                 "error": f"Command failed with return code {process.returncode}",
@@ -295,8 +286,6 @@ async def _run_codex_command(cmd: List[str], timeout: int = 120) -> Dict[str, An
 
     except Exception as e:
         logger.error(f"❌ Exception running Codex command: {e}")
-        import traceback
-        logger.error(f"   traceback: {traceback.format_exc()}")
         return {
             "success": False,
             "error": str(e),

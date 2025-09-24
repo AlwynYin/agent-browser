@@ -24,73 +24,33 @@ from simpletooling_integration import SimpleToolingClient
 def authenticate_codex(api_key: str) -> bool:
     """Authenticate Codex CLI with OpenAI API key."""
     try:
-        logging.info("🔍 Checking for Codex CLI installation...")
-
         # Check if codex is available
         which_result = subprocess.run(['which', 'codex'], capture_output=True, text=True)
         if which_result.returncode != 0:
             logging.error("❌ Codex CLI not found in PATH")
-            logging.error(f"   which stdout: {which_result.stdout}")
-            logging.error(f"   which stderr: {which_result.stderr}")
-
-            # Try to find codex in common locations
-            import os
-            common_paths = ['/usr/local/bin/codex', '/usr/bin/codex', '/bin/codex']
-            for path in common_paths:
-                if os.path.exists(path):
-                    logging.info(f"🔍 Found codex at: {path}")
-                    break
-            else:
-                logging.error("❌ Codex not found in common locations")
             return False
 
         codex_path = which_result.stdout.strip()
         logging.info(f"✅ Found Codex CLI at: {codex_path}")
 
-        # Check codex version first
-        logging.info("🔍 Checking Codex CLI version...")
-        version_result = subprocess.run([codex_path, '--version'], capture_output=True, text=True, timeout=10)
-        if version_result.returncode == 0:
-            logging.info(f"📋 Codex version: {version_result.stdout.strip()}")
-        else:
-            logging.warning(f"⚠️ Could not get Codex version: {version_result.stderr}")
-
         # Authenticate with API key
         logging.info("🔐 Authenticating Codex CLI with OpenAI API key...")
         auth_result = subprocess.run(
-            [codex_path, 'login', '--api-key', '$OPENAI_API_KEY'],
+            [codex_path, 'login', '--api-key', api_key],
             capture_output=True,
             text=True,
             timeout=30
         )
 
-        logging.info(f"🔍 Auth command exit code: {auth_result.returncode}")
-        if auth_result.stdout:
-            logging.info(f"🔍 Auth stdout: {auth_result.stdout}")
-        if auth_result.stderr:
-            logging.info(f"🔍 Auth stderr: {auth_result.stderr}")
 
         if auth_result.returncode == 0:
             logging.info("✅ Codex CLI authenticated successfully")
 
-            # Verify authentication by checking login status
-            logging.info("🔍 Verifying authentication...")
-            status_result = subprocess.run(
-                [codex_path, 'login', 'status'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if status_result.returncode == 0:
-                logging.info(f"✅ Auth verification: {status_result.stdout.strip()}")
-            else:
-                logging.warning(f"⚠️ Auth verification failed: {status_result.stderr}")
-
             return True
         else:
-            logging.error(f"❌ Codex authentication failed with exit code {auth_result.returncode}")
-            logging.error(f"   stderr: {auth_result.stderr}")
-            logging.error(f"   stdout: {auth_result.stdout}")
+            logging.error("❌ Codex authentication failed")
+            if auth_result.stderr:
+                logging.error(f"Error: {auth_result.stderr}")
             return False
 
     except subprocess.TimeoutExpired:
@@ -98,8 +58,6 @@ def authenticate_codex(api_key: str) -> bool:
         return False
     except Exception as e:
         logging.error(f"❌ Codex authentication error: {e}")
-        import traceback
-        logging.error(f"   traceback: {traceback.format_exc()}")
         return False
 
 

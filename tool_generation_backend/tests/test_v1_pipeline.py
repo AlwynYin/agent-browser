@@ -22,7 +22,9 @@ async def test_tool_generation_pipeline():
     """Test the complete tool generation pipeline."""
 
     # Configuration
-    BASE_URL = "https://"
+    BASE_URL = "https://tool-generation-service.up.railway.app"
+    # BASE_URL = "http://127.0.0.1:8000"
+    # BASE_URL = "http://100.116.240.11:8000"
 
     # Test job request matching design spec
     job_request = {
@@ -149,7 +151,9 @@ async def test_tool_generation_pipeline():
 
 async def test_health_check():
     """Test if the backend is running."""
-    BASE_URL = "http://localhost:8000"
+    BASE_URL = "https://tool-generation-service.up.railway.app"
+    # BASE_URL = "http://127.0.0.1:8000"
+    # BASE_URL = "http://100.116.240.11:8000"
 
     try:
         async with aiohttp.ClientSession() as session:
