@@ -34,6 +34,14 @@ COPY . .
 # Create tool service directory to match expected path structure
 RUN mkdir -p /app/tool_service/tools
 
+# Create Codex config directory and add trusted project config
+RUN mkdir -p /root/.codex
+RUN echo 'model = "gpt-5"' > /root/.codex/config.toml && \
+    echo 'model_reasoning_effort = "low"' >> /root/.codex/config.toml && \
+    echo '' >> /root/.codex/config.toml && \
+    echo '[projects."/app/tool_service"]' >> /root/.codex/config.toml && \
+    echo 'trust_level = "trusted"' >> /root/.codex/config.toml
+
 # Note: Codex authentication will happen at app startup
 
 # Expose port
