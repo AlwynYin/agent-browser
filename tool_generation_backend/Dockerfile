@@ -7,6 +7,7 @@ WORKDIR /app/tool_generation_backend
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Codex CLI from GitHub releases
@@ -31,8 +32,8 @@ RUN uv sync --frozen
 # Copy application code
 COPY . .
 
-# Create tool service directory to match expected path structure
-RUN mkdir -p /app/tool_service/tools
+# Clone simpletooling template repo into tool_service directory
+RUN git clone https://github.com/EvoEvolver/simpletooling_template.git /app/tool_service
 
 # Create Codex config directory and add trusted project config
 RUN mkdir -p /root/.codex
