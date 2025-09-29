@@ -65,27 +65,27 @@ class AgentManager:
                 instructions=self._get_system_instructions(),
                 model="gpt-4-turbo",
                 tools=[
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "browse_documentation",
-                            "description": "Browse and search documentation in chemistry libraries",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "library": {
-                                        "type": "string",
-                                        "description": "Chemistry library to browse (rdkit, ase, pymatgen, pyscf)"
-                                    },
-                                    "query": {
-                                        "type": "string",
-                                        "description": "Specific functionality to search for"
-                                    }
-                                },
-                                "required": ["library", "query"]
-                            }
-                        }
-                    },
+                    # { NOT YET IMPLEMENTED
+                    #     "type": "function",
+                    #     "function": {
+                    #         "name": "browse_documentation",
+                    #         "description": "Browse and search documentation in chemistry libraries",
+                    #         "parameters": {
+                    #             "type": "object",
+                    #             "properties": {
+                    #                 "library": {
+                    #                     "type": "string",
+                    #                     "description": "Chemistry library to browse (rdkit, ase, pymatgen, pyscf)"
+                    #                 },
+                    #                 "query": {
+                    #                     "type": "string",
+                    #                     "description": "Specific functionality to search for"
+                    #                 }
+                    #             },
+                    #             "required": ["library", "query"]
+                    #         }
+                    #     }
+                    # },
                     {
                         "type": "function",
                         "function": {
@@ -116,23 +116,23 @@ class AgentManager:
                             }
                         }
                     },
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "test_tool",
-                            "description": "Test a generated tool (future implementation)",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "tool_path": {
-                                        "type": "string",
-                                        "description": "Path to the tool file"
-                                    }
-                                },
-                                "required": ["tool_path"]
-                            }
-                        }
-                    }
+                    # { NOT YET IMPLEMENTED
+                    #     "type": "function",
+                    #     "function": {
+                    #         "name": "test_tool",
+                    #         "description": "Test a generated tool (future implementation)",
+                    #         "parameters": {
+                    #             "type": "object",
+                    #             "properties": {
+                    #                 "tool_path": {
+                    #                     "type": "string",
+                    #                     "description": "Path to the tool file"
+                    #                 }
+                    #             },
+                    #             "required": ["tool_path"]
+                    #         }
+                    #     }
+                    # }
                 ]
             )
             logger.info(f"Created OpenAI Assistant: {self.assistant.id}")
@@ -143,26 +143,41 @@ class AgentManager:
     def _get_system_instructions(self) -> str:
         """Get the system instructions for the assistant."""
         return """
-You are a specialized chemistry tool generator assistant. Your role is to:
+You are a specialized chemistry tool generator assistant. Your primary role is to transform coarse user requirements into precise, individual tools.
 
-1. Analyze user requirements for chemistry computation tools
-2. Browse documentation for chemistry libraries (RDKit, ASE, PyMatGen, PySCF)
-3. Generate production-ready Python tools that integrate with SimpleTooling
+## Your Workflow:
+1. **ANALYZE** user requirements (which may be vague descriptions)
+2. **REFINE** requirements into precise specifications with:
+   - Exact parameter names and types
+   - Clear input/output schemas
+   - Specific chemistry library functions to use
+3. **IMPLEMENT** individual tools (one per requirement, not combined)
 
-Key Guidelines:
-- Always start by browsing documentation to understand available APIs
-- Generate tools that use the @toolset.add() decorator pattern
-- Focus on chemistry-specific computations (molecular properties, crystal structures, etc.)
-- Include proper error handling and type hints
-- Ensure tools are self-contained and well-documented
+## Requirement Refinement Process:
+When given coarse requirements like:
+- "Description: Calculate molecular properties"
+- "Input: molecule data"
+- "Output: properties"
 
-When implementing tools:
-1. Use browse_documentation to find relevant APIs
-2. Use implement_tool to generate the Python code
-3. Tools should be saved to the configured tools directory
-4. Include metadata for tool registration
+Transform them into precise specifications:
+- Parameter: `smiles: str` - SMILES string representation
+- Parameter: `properties: List[str]` - List of properties ['mw', 'logp', 'tpsa']
+- Returns: `Dict[str, float]` - Property name to value mapping
 
-You work with OpenAI conversation threads for context preservation.
+## Implementation Guidelines:
+- Generate ONE tool per requirement (never combine multiple tools)
+- Use proper Python type hints (str, int, float, List, Dict, etc.)
+- Include comprehensive error handling
+- Use @toolset.add() decorator for SimpleTooling integration
+- Focus on chemistry libraries: RDKit, ASE, PyMatGen, PySCF
+
+## Tool Generation Process:
+1. First, analyze and refine ALL requirements
+2. For each refined requirement, call implement_tool individually
+3. Create self-contained, production-ready tools
+4. Include clear documentation and examples
+
+Remember: Transform vague user descriptions into precise, implementable specifications before coding.
 """
 
     async def get_or_create_thread(self, session_id: str) -> str:
@@ -243,6 +258,8 @@ You work with OpenAI conversation threads for context preservation.
         progress_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """Handle run completion and tool calls."""
+        tool_results = []  # Track all tool execution results
+
         try:
             while True:
                 # Check run status
@@ -268,7 +285,8 @@ You work with OpenAI conversation threads for context preservation.
                         "success": True,
                         "session_id": session_id,
                         "messages": [msg.content[0].text.value for msg in messages.data if msg.role == "assistant"],
-                        "run_id": run_id
+                        "run_id": run_id,
+                        "tool_results": tool_results  # Include all tool results
                     }
 
                 elif run.status == "requires_action":
@@ -278,6 +296,7 @@ You work with OpenAI conversation threads for context preservation.
 
                     for tool_call in tool_calls:
                         output = await self._execute_tool_call(tool_call, session_id)
+                        tool_results.append(output)  # Store tool result
                         tool_outputs.append({
                             "tool_call_id": tool_call.id,
                             "output": json.dumps(output)
@@ -294,7 +313,8 @@ You work with OpenAI conversation threads for context preservation.
                     return {
                         "success": False,
                         "session_id": session_id,
-                        "error": f"Run {run.status}: {run.last_error.message if run.last_error else 'Unknown error'}"
+                        "error": f"Run {run.status}: {run.last_error.message if run.last_error else 'Unknown error'}",
+                        "tool_results": tool_results  # Include partial results even on failure
                     }
 
                 # Wait before checking again
@@ -305,7 +325,8 @@ You work with OpenAI conversation threads for context preservation.
             return {
                 "success": False,
                 "session_id": session_id,
-                "error": str(e)
+                "error": str(e),
+                "tool_results": tool_results  # Include partial results even on error
             }
 
     async def _execute_tool_call(self, tool_call, session_id: str) -> Dict[str, Any]:
@@ -349,8 +370,18 @@ You work with OpenAI conversation threads for context preservation.
         tool_name = arguments.get("tool_name")
         requirements = arguments.get("requirements", [])
 
-        # Use codex to implement the tool
+        # Use codex to implement individual tool
         result = await execute_codex_implement(tool_name, requirements)
+
+        if result["success"]:
+            # Add success metadata for individual tool tracking
+            result.update({
+                "tool_name": tool_name,
+                "requirement_count": len(requirements),
+                "individual_tool": True
+            })
+            logger.info(f"Successfully implemented individual tool: {tool_name}")
+
         return result
 
     async def _handle_test_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:

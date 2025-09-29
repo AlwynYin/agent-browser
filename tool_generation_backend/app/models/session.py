@@ -5,11 +5,13 @@ Translated from TypeScript schema interfaces.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import Field
 
 from .base import DatabaseModel, BaseModelConfig
+from .job import UserToolRequirement
+
 
 
 class SessionStatus(str, Enum):
@@ -21,6 +23,25 @@ class SessionStatus(str, Enum):
     EXECUTING = "executing"
     COMPLETED = "completed"
     FAILED = "failed"
+
+    @staticmethod
+    def from_string(s: str) -> "SessionStatus":
+        if s.lower() == "pending":
+            return SessionStatus.PENDING
+        elif s.lower() == "planning":
+            return SessionStatus.PLANNING
+        elif s.lower() == "searching":
+            return SessionStatus.SEARCHING
+        elif s.lower() == "implementing":
+            return SessionStatus.IMPLEMENTING
+        elif s.lower() == "executing":
+            return SessionStatus.EXECUTING
+        elif s.lower() == "completed":
+            return SessionStatus.COMPLETED
+        elif s.lower() == "failed":
+            return SessionStatus.FAILED
+        else:
+            raise ValueError(f"Unknown session status: {s}")
 
 
 class ToolRequirement(BaseModelConfig):
@@ -181,37 +202,52 @@ class ExecutionResult(DatabaseModel):
 
 
 class Session(DatabaseModel):
-    """Main session model representing a user's computation workflow."""
+    """Session for tool generation or update workflow."""
 
+    job_id: str = Field(description="Associated job ID")
     user_id: str = Field(description="User identifier")
-    requirement: str = Field(description="User's input requirement")
+    operation_type: Literal["generate", "update"] = Field(
+        default="generate",
+        description="Type of operation: generate new tools or update existing"
+    )
+
+    # For generate operations
+    tool_requirements: List[UserToolRequirement] = Field(
+        default_factory=list,
+        description="User tool requirements for generation"
+    )
+
+    # For update operations
+    base_job_id: Optional[str] = Field(
+        default=None,
+        description="Reference to job being updated"
+    )
+    base_tool_specs: List[ToolSpec] = Field(
+        default_factory=list,
+        description="Existing tool specs from base job (for context)"
+    )
+    update_requirements: List[UserToolRequirement] = Field(
+        default_factory=list,
+        description="Requirements for tool updates"
+    )
+
     status: SessionStatus = Field(
         default=SessionStatus.PENDING,
         description="Current workflow status"
     )
-    implementation_plan: Optional[ImplementationPlan] = Field(
-        default=None,
-        description="Implementation plan from orchestrator"
-    )
-    search_plan: Optional[SearchPlan] = Field(
-        default=None,
-        description="Search plan for browser agent"
-    )
-    api_specs: List[ApiSpec] = Field(
+    generated_tools: List[ToolSpec] = Field(
         default_factory=list,
-        description="API specifications found by browser agent"
-    )
-    tools: List[ToolSpec] = Field(
-        default_factory=list,
-        description="Generated tools from implementer agent"
-    )
-    results: List[ExecutionResult] = Field(
-        default_factory=list,
-        description="Tool execution results"
+        description="Generated or updated tools"
     )
     error_message: Optional[str] = Field(
         default=None,
         description="Error message if session failed"
+    )
+
+    # OpenAI thread tracking
+    thread_id: Optional[str] = Field(
+        default=None,
+        description="OpenAI thread ID for agent interaction"
     )
 
 
@@ -220,7 +256,7 @@ class SessionCreate(BaseModelConfig):
     """Request model for creating a new session."""
 
     user_id: str = Field(description="User identifier")
-    requirement: str = Field(description="User's input requirement")
+    requirements: List[UserToolRequirement] = Field(description="User's input requirement")
 
 
 class SessionUpdate(BaseModelConfig):

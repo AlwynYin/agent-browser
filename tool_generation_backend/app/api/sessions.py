@@ -9,14 +9,10 @@ import logging
 
 from app.models.session import (
     SessionCreate, SessionUpdate, SessionResponse, Session,
-    SessionStatus, ToolSpec, ExecutionResult
+    SessionStatus, ToolSpec
 )
 from app.services.session_service import SessionService
-from app.services.tool_service import ToolService
 from app.repositories.session_repository import SessionRepository
-from app.repositories.tool_repository import ToolRepository, ExecutionResultRepository
-# OpenAI Agent SDK integration handled in SessionService
-from simpletooling_integration import SimpleToolingClient
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -26,28 +22,17 @@ router = APIRouter()
 
 # Dependency injection
 async def get_session_service() -> SessionService:
-    """Get session service instance with dedicated agents."""
-    settings = get_settings()
-
+    """Get session service instance with agent workflow."""
     # Initialize repositories
     session_repo = SessionRepository()
-    tool_repo = ToolRepository()
-    execution_repo = ExecutionResultRepository()
-
-    # # Initialize SimpleTooling client
-    # simpletooling_client = SimpleToolingClient(settings.simpletooling_url)
-    simpletooling_client = None
 
     # Create and return session service (OpenAI Agent SDK handled internally)
     return SessionService(
-        session_repo=session_repo,
-        tool_repo=tool_repo,
-        execution_repo=execution_repo,
-        simpletooling_client=simpletooling_client
+        session_repo=session_repo
     )
 
 
-@router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+# @router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_session(
     session_data: SessionCreate,
     session_service: SessionService = Depends(get_session_service)
@@ -88,7 +73,7 @@ async def create_session(
         )
 
 
-@router.get("/{session_id}", response_model=Session)
+# @router.get("/{session_id}", response_model=Session)
 async def get_session(
     session_id: str,
     session_service: SessionService = Depends(get_session_service)
@@ -113,7 +98,7 @@ async def get_session(
     return session
 
 
-@router.put("/{session_id}", response_model=SessionResponse)
+# @router.put("/{session_id}", response_model=SessionResponse)
 async def update_session(
     session_id: str,
     update_data: SessionUpdate,
@@ -162,7 +147,7 @@ async def update_session(
     )
 
 
-@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+# @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_session(
     session_id: str,
     reason: str = "User requested cancellation",
@@ -193,7 +178,7 @@ async def cancel_session(
         )
 
 
-@router.get("/user/{user_id}", response_model=List[Session])
+# @router.get("/user/{user_id}", response_model=List[Session])
 async def get_user_sessions(
     user_id: str,
     limit: int = 50,
@@ -222,7 +207,7 @@ async def get_user_sessions(
         )
 
 
-@router.get("/status/{status_value}", response_model=List[Session])
+# @router.get("/status/{status_value}", response_model=List[Session])
 async def get_sessions_by_status(
     status_value: str,
     limit: Optional[int] = None,
@@ -262,7 +247,7 @@ async def get_sessions_by_status(
         )
 
 
-@router.get("/", response_model=List[Session])
+# @router.get("/", response_model=List[Session])
 async def get_active_sessions(
     limit: Optional[int] = None,
     session_service: SessionService = Depends(get_session_service)
@@ -289,7 +274,7 @@ async def get_active_sessions(
         )
 
 
-@router.get("/{session_id}/tools", response_model=List[ToolSpec])
+# @router.get("/{session_id}/tools", response_model=List[ToolSpec])
 async def get_session_tools(
     session_id: str,
     session_service: SessionService = Depends(get_session_service)
@@ -315,80 +300,7 @@ async def get_session_tools(
     return session.tools
 
 
-@router.get("/{session_id}/results", response_model=List[ExecutionResult])
-async def get_session_results(
-    session_id: str,
-    session_service: SessionService = Depends(get_session_service)
-) -> List[ExecutionResult]:
-    """
-    Get execution results for a session.
-
-    Args:
-        session_id: Session ID
-        session_service: Session service instance
-
-    Returns:
-        List[ExecutionResult]: Session execution results
-    """
-    # Check if session exists
-    session = await session_service.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Session not found: {session_id}"
-        )
-
-    return session.results
-
-
-@router.post("/{session_id}/execute/{tool_name}")
-async def execute_session_tool(
-    session_id: str,
-    tool_name: str,
-    inputs: dict,
-    session_service: SessionService = Depends(get_session_service)
-) -> dict:
-    """
-    Execute a tool from a session.
-
-    Args:
-        session_id: Session ID
-        tool_name: Tool name to execute
-        inputs: Tool inputs
-        session_service: Session service instance
-
-    Returns:
-        dict: Execution result
-    """
-    # Check if session exists
-    session = await session_service.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Session not found: {session_id}"
-        )
-
-    # Check if tool exists in session
-    tool_exists = any(tool.name == tool_name for tool in session.tools)
-    if not tool_exists:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Tool '{tool_name}' not found in session {session_id}"
-        )
-
-    try:
-        result = await session_service.execute_tool(session_id, tool_name, inputs)
-        return result
-
-    except Exception as e:
-        logger.error(f"Failed to execute tool {tool_name} in session {session_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to execute tool: {str(e)}"
-        )
-
-
-@router.get("/{session_id}/status")
+# @router.get("/{session_id}/status")
 async def get_session_status(
     session_id: str,
     session_service: SessionService = Depends(get_session_service)
@@ -419,8 +331,6 @@ async def get_session_status(
         "status": session.status.value,
         "workflow_status": workflow_status,
         "tools_count": len(session.tools),
-        "registered_tools_count": sum(1 for tool in session.tools if tool.registered),
-        "results_count": len(session.results),
         "error_message": session.error_message,
         "created_at": session.created_at,
         "updated_at": session.updated_at
@@ -428,7 +338,7 @@ async def get_session_status(
 
 
 # Health check endpoint for session service
-@router.get("/health/sessions")
+# @router.get("/health/sessions")
 async def session_service_health() -> dict:
     """
     Health check for session service.

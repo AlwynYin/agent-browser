@@ -7,8 +7,6 @@ Users generate code by passing tool requirements in natural language. A `job` is
 
 Each tool will be a python file that integrates with SimpleTooling's `@toolset.add()` decorator pattern and is automatically registered as an HTTP endpoint. Tools are stored in a shared filesystem and immediately available through the SimpleTooling server.
 
-**Note**: This specification is supplemented by the comprehensive [Tool Service Integration Design](./tool_service_design.md) which provides detailed architecture and implementation guidance.
-
 ## Service Endpoints
 
 
@@ -38,7 +36,7 @@ Create a new tool generation job.
 **Request Body:**
 ```typescript
 interface ToolGenerationRequest {
-    toolRequirements: ToolRequirement[]
+    toolRequirements: UserToolRequirement[]
     metadata?: RequestMetadata
 }
 ```
@@ -66,7 +64,7 @@ Get job status and metadata.
 
 #### `ToolRequirement`
 ```typescript
-interface ToolRequirement {
+interface UserToolRequirement {
     description: string           // Natural language description of the tool
     input: string                 // Natural language description of the input
     output: string                // Natural language description of the output
@@ -245,7 +243,7 @@ curl http://localhost:8002/api/v1/jobs/job_abc123
     {
       "toolId": "tool_xyz789",
       "fileName": "calculate_molecular_weight.py",
-      "filePath": "tools/generated/calculate_molecular_weight.py",
+      "code": "<python code content>",
       "description": "Calculate molecular weight from SMILES string using RDKit",
       "code": "from tools.toolset import toolset\nfrom typing import Dict\n\n@toolset.add()\ndef calculate_molecular_weight(smiles: str) -> Dict[str, float]:\n    \"\"\"Calculate molecular weight of a chemical compound from SMILES string.\"\"\"\n    from rdkit import Chem\n    from rdkit.Chem import Descriptors\n    \n    try:\n        mol = Chem.MolFromSmiles(smiles)\n        if mol is None:\n            raise ValueError(f\"Invalid SMILES string: {smiles}\")\n        \n        molecular_weight = Descriptors.MolWt(mol)\n        return {'molecular_weight': molecular_weight}\n    except Exception as e:\n        raise ValueError(f\"Error calculating molecular weight: {str(e)}\")",
       "endpoint": "http://localhost:8000/tool/calculate_molecular_weight",
@@ -263,80 +261,7 @@ curl http://localhost:8002/api/v1/jobs/job_abc123
 ```
 
 ### Python Client Example
-
-```python
-import requests
-import time
-from typing import List, Dict, Any
-
-class ToolGenerationClient:
-    def __init__(self, base_url: str = "http://localhost:8002"):
-        self.base_url = base_url
-    
-    def create_job(self, tool_requirements: List[Dict], 
-                   metadata: Dict = None) -> str:
-        """Create a new tool generation job and return job ID."""
-        payload = {
-            "toolRequirements": tool_requirements
-        }
-        if metadata:
-            payload["metadata"] = metadata
-            
-        response = requests.post(f"{self.base_url}/api/v1/jobs", json=payload)
-        response.raise_for_status()
-        return response.json()["jobId"]
-    
-    def wait_for_completion(self, job_id: str, poll_interval: int = 2) -> Dict:
-        """Poll job status until completion."""
-        while True:
-            status = self.get_job_status(job_id)
-            progress = status['progress']
-            print(f"Progress: {progress['completed']}/{progress['total']} tools")
-            
-            if status["status"] in ["completed", "failed", "cancelled"]:
-                return status
-                
-            time.sleep(poll_interval)
-    
-    def get_job_status(self, job_id: str) -> Dict:
-        """Get current job status."""
-        response = requests.get(f"{self.base_url}/api/v1/jobs/{job_id}")
-        response.raise_for_status()
-        return response.json()
-
-# Usage example
-client = ToolGenerationClient()
-
-# Submit job
-job_id = client.create_job(
-    tool_requirements=[...],
-    metadata={"clientId": "python-script"}
-)
-
-# Wait for completion
-final_status = client.wait_for_completion(job_id)
-
-if final_status["status"] == "completed":
-    # Access generated tool files from the JobResponse
-    tool_files = final_status.get("toolFiles", [])
-    failures = final_status.get("failures", [])
-    summary = final_status.get("summary", {})
-
-    print(f"Generated {len(tool_files)} tool files successfully")
-    for tool_file in tool_files:
-        print(f"- {tool_file['fileName']} at {tool_file['filePath']}")
-        print(f"  Code length: {len(tool_file['code'])} characters")
-        print(f"  Registered: {tool_file['registered']}")
-        # Access the generated Python code directly
-        # python_code = tool_file['code']
-
-    if failures:
-        print(f"Failed to generate {len(failures)} tools")
-
-    print(f"Summary: {summary.get('successful', 0)}/{summary.get('totalRequested', 0)} successful")
-else:
-    print(f"Job failed with status: {final_status['status']}")
-```
+see `tool_generation_backend/tests/test_v1_pipeline.py`
 
 ## Tool File Storage Design
 

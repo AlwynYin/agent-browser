@@ -32,21 +32,15 @@ class Settings(BaseSettings):
         description="OpenAI model to use"
     )
 
-    # SimpleTooling Configuration
-    simpletooling_url: str = Field(
-        default="http://localhost:8000",
-        env="SIMPLETOOLING_URL",
-        description="SimpleTooling service URL"
-    )
-
     # Server Configuration
     host: str = Field(
         default="0.0.0.0",
         env="HOST",
         description="Server host address"
     )
+
     port: int = Field(
-        default=8001,
+        default=8000,
         env="PORT",
         description="Server port number"
     )
@@ -80,6 +74,7 @@ class Settings(BaseSettings):
         env="TOOL_SERVICE_DIR",
         description="Directory for tool service files"
     )
+
     tools_dir: str = Field(
         default="tools",
         env="TOOLS_DIR",

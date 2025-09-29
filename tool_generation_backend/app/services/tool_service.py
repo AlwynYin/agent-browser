@@ -14,7 +14,6 @@ from app.models.tool import (
 )
 from app.models.session import ToolSpec, ExecutionResult
 from app.repositories.tool_repository import ToolRepository, ExecutionResultRepository
-from simpletooling_integration import SimpleToolingClient, HealthMonitor
 # AIService removed - using OpenAI Agent SDK
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,6 @@ class ToolService:
         self,
         tool_repo: ToolRepository,
         execution_repo: ExecutionResultRepository,
-        simpletooling_client: SimpleToolingClient
     ):
         """
         Initialize tool service.
@@ -39,10 +37,6 @@ class ToolService:
         """
         self.tool_repo = tool_repo
         self.execution_repo = execution_repo
-        self.simpletooling_client = simpletooling_client
-
-        # Initialize services
-        self.health_monitor = HealthMonitor(simpletooling_client)
 
     async def generate_tool(self, generation_request: ToolGenerationRequest) -> ToolGenerationResponse:
         """
@@ -101,6 +95,7 @@ class ToolService:
                 progress={"error": str(e)}
             )
 
+    # TODO: work in progress
     async def register_tools(self, registration_request: ToolRegistrationRequest) -> ToolRegistrationResponse:
         """
         Register tools with SimpleTooling service.
@@ -126,14 +121,12 @@ class ToolService:
                     if load_result["status"] == "success":
                         # Store tool metadata
                         tool_name = Path(file_path).stem
-                        endpoint = f"{self.simpletooling_client.base_url}/tool/{tool_name}"
 
                         tool_metadata = {
                             "name": tool_name,
                             "file_name": Path(file_path).name,
                             "file_path": file_path,
                             "description": f"Tool from {file_path}",
-                            "endpoint": endpoint,
                             "registered": True,
                             "status": "registered",
                             "category": "uploaded"
@@ -164,7 +157,6 @@ class ToolService:
                 registered_tools=registered_tools,
                 failed_registrations=failed_registrations,
                 total_registered=len(registered_tools),
-                simpletooling_url=registration_request.simpletooling_url or self.simpletooling_client.base_url
             )
 
         except Exception as e:
@@ -173,9 +165,9 @@ class ToolService:
                 registered_tools=[],
                 failed_registrations=[{"error": str(e)}],
                 total_registered=0,
-                simpletooling_url=registration_request.simpletooling_url or self.simpletooling_client.base_url
             )
 
+    # TODO: work in progress
     async def execute_tool(self, execution_request: ToolExecutionRequest) -> ToolExecutionResponse:
         """
         Execute a tool and return results.
@@ -392,67 +384,6 @@ class ToolService:
             logger.error(f"Failed to delete tool {tool_id}: {e}")
             return False
 
-    async def get_simpletooling_status(self) -> Dict[str, Any]:
-        """
-        Get SimpleTooling service status and metrics.
-
-        Returns:
-            Dict[str, Any]: Service status
-        """
-        return await self.health_monitor.get_service_metrics()
-
-    async def sync_with_simpletooling(self) -> Dict[str, Any]:
-        """
-        Synchronize tool registry with SimpleTooling service.
-
-        Returns:
-            Dict[str, Any]: Synchronization result
-        """
-        try:
-            # Get tools from SimpleTooling
-            simpletooling_tools = await self.simpletooling_client.list_tools()
-
-            # Get tools from our database
-            our_tools = await self.tool_repo.get_registered_tools()
-
-            sync_result = {
-                "simpletooling_tools": len(simpletooling_tools),
-                "database_tools": len(our_tools),
-                "synchronized": [],
-                "missing_in_db": [],
-                "missing_in_simpletooling": []
-            }
-
-            # Find tools in SimpleTooling but not in our DB
-            simpletooling_names = {tool["name"] for tool in simpletooling_tools}
-            our_tool_names = {tool.name for tool in our_tools}
-
-            missing_in_db = simpletooling_names - our_tool_names
-            missing_in_simpletooling = our_tool_names - simpletooling_names
-
-            sync_result["missing_in_db"] = list(missing_in_db)
-            sync_result["missing_in_simpletooling"] = list(missing_in_simpletooling)
-
-            # Update registration status for tools that exist in both
-            for tool in our_tools:
-                if tool.name in simpletooling_names:
-                    # Find the corresponding SimpleTooling tool
-                    st_tool = next((t for t in simpletooling_tools if t["name"] == tool.name), None)
-                    if st_tool:
-                        # Update endpoint if needed
-                        if tool.endpoint != st_tool["endpoint"]:
-                            await self.tool_repo.update_registration_status(
-                                tool.id, st_tool["endpoint"], True
-                            )
-                            sync_result["synchronized"].append(tool.name)
-
-            logger.info(f"Synchronized with SimpleTooling: {sync_result}")
-            return sync_result
-
-        except Exception as e:
-            logger.error(f"Failed to sync with SimpleTooling: {e}")
-            return {"error": str(e)}
-
     async def _generate_single_tool(self, requirement: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Generate a single tool from a requirement specification."""
         try:
@@ -467,15 +398,3 @@ class ToolService:
         except Exception as e:
             logger.error(f"Failed to generate tool from requirement: {e}")
             return None
-
-    async def start_health_monitoring(self):
-        """Start SimpleTooling health monitoring."""
-        await self.health_monitor.start_monitoring()
-
-    async def stop_health_monitoring(self):
-        """Stop SimpleTooling health monitoring."""
-        await self.health_monitor.stop_monitoring()
-
-    async def get_health_summary(self, hours: int = 24) -> Dict[str, Any]:
-        """Get health summary for specified time period."""
-        return self.health_monitor.get_health_summary(hours)

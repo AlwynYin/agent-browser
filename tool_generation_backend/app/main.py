@@ -18,47 +18,7 @@ from app.api.sessions import router as sessions_router
 from app.api.jobs import router as jobs_router
 from app.websocket.manager import WebSocketManager
 from app.middleware.logging import setup_logging_middleware
-from simpletooling_integration import SimpleToolingClient
-
-
-def authenticate_codex(api_key: str) -> bool:
-    """Authenticate Codex CLI with OpenAI API key."""
-    try:
-        # Check if codex is available
-        which_result = subprocess.run(['which', 'codex'], capture_output=True, text=True)
-        if which_result.returncode != 0:
-            logging.error("❌ Codex CLI not found in PATH")
-            return False
-
-        codex_path = which_result.stdout.strip()
-        logging.info(f"✅ Found Codex CLI at: {codex_path}")
-
-        # Authenticate with API key
-        logging.info("🔐 Authenticating Codex CLI with OpenAI API key...")
-        auth_result = subprocess.run(
-            [codex_path, 'login', '--api-key', api_key],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-
-
-        if auth_result.returncode == 0:
-            logging.info("✅ Codex CLI authenticated successfully")
-
-            return True
-        else:
-            logging.error("❌ Codex authentication failed")
-            if auth_result.stderr:
-                logging.error(f"Error: {auth_result.stderr}")
-            return False
-
-    except subprocess.TimeoutExpired:
-        logging.error("❌ Codex authentication timed out")
-        return False
-    except Exception as e:
-        logging.error(f"❌ Codex authentication error: {e}")
-        return False
+from app.utils.codex_utils import authenticate_codex
 
 
 @asynccontextmanager
@@ -66,6 +26,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown."""
     # Startup
     settings = get_settings()
+    print(settings)
     logging.info("🚀 Starting agent-browser backend...")
     logging.info(f"📊 Environment: {settings.environment}")
     logging.info(f"🌐 Port: {settings.port}")
@@ -81,12 +42,6 @@ async def lifespan(app: FastAPI):
             logging.warning("⚠️ Codex authentication failed - tool generation may not work")
     else:
         logging.warning("⚠️ No OpenAI API key provided - Codex authentication skipped")
-
-    # Initialize SimpleTooling integration
-    app.state.simpletooling = SimpleToolingClient(
-        base_url=settings.simpletooling_url
-    )
-    logging.info(f"🔧 SimpleTooling client initialized: {settings.simpletooling_url}")
 
     # Initialize WebSocket manager
     app.state.websocket_manager = WebSocketManager()

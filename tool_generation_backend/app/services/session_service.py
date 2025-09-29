@@ -8,12 +8,10 @@ from datetime import datetime, timezone
 import logging
 
 from app.models.session import (
-    SessionCreate, SessionUpdate, SessionStatus, Session,
-    ImplementationPlan, SearchPlan, ApiSpec, ToolSpec, ExecutionResult
+    SessionUpdate, SessionStatus, Session, ToolSpec
 )
+from app.models.job import UserToolRequirement
 from app.repositories.session_repository import SessionRepository
-from app.repositories.tool_repository import ToolRepository, ExecutionResultRepository
-from simpletooling_integration import SimpleToolingClient
 from app.agents import AgentManager
 
 logger = logging.getLogger(__name__)
@@ -25,9 +23,6 @@ class SessionService:
     def __init__(
         self,
         session_repo: SessionRepository,
-        tool_repo: ToolRepository,
-        execution_repo: ExecutionResultRepository,
-        simpletooling_client: SimpleToolingClient,
         websocket_manager: Optional[Any] = None
     ):
         """
@@ -35,17 +30,9 @@ class SessionService:
 
         Args:
             session_repo: Session repository
-            tool_repo: Tool repository
-            execution_repo: Execution result repository
-            simpletooling_client: SimpleTooling client
             websocket_manager: WebSocket manager for real-time updates
         """
         self.session_repo = session_repo
-        self.tool_repo = tool_repo
-        self.execution_repo = execution_repo
-        self.simpletooling_client = simpletooling_client
-
-        # Registration service removed - using direct codex generation
 
         # Initialize OpenAI Agent Manager
         self.agent_manager = AgentManager()
@@ -56,21 +43,36 @@ class SessionService:
         # Track active workflows
         self.active_workflows: Dict[str, asyncio.Task] = {}
 
-    async def create_session(self, session_data: SessionCreate) -> str:
+    async def create_session(self, job_id: str, user_id: str, tool_requirements: list[UserToolRequirement], operation_type: str = "generate", base_job_id: Optional[str] = None) -> str:
         """
         Create new session and start processing workflow.
 
         Args:
-            session_data: Session creation data
+            job_id: Associated job ID
+            user_id: User identifier
+            tool_requirements: List of tool requirements
+            operation_type: "generate" or "update"
+            base_job_id: Base job ID for update operations
 
         Returns:
             str: Created session ID
         """
         try:
+            # Create session data
+            session_data = {
+                "job_id": job_id,
+                "user_id": user_id,
+                "operation_type": operation_type,
+                "tool_requirements": [req.model_dump() for req in tool_requirements] if operation_type == "generate" else [],
+                "update_requirements": [req.model_dump() for req in tool_requirements] if operation_type == "update" else [],
+                "base_job_id": base_job_id,
+                "status": SessionStatus.PENDING
+            }
+
             # Create session in database
             session_id = await self.session_repo.create_session(session_data)
 
-            logger.info(f"Created session {session_id} for user {session_data.user_id}")
+            logger.info(f"Created session {session_id} for job {job_id} user {user_id}")
 
             # Start async workflow processing
             workflow_task = asyncio.create_task(
@@ -98,7 +100,7 @@ class SessionService:
 
     async def get_session_by_job_id(self, job_id: str) -> Optional[Session]:
         """
-        Get session by job ID (searches in requirement field).
+        Get session by job ID.
 
         Args:
             job_id: Job ID to search for
@@ -107,10 +109,8 @@ class SessionService:
             Optional[Session]: Session or None if not found
         """
         try:
-            # Use regex to search for job ID in requirement field
-            import re
             sessions = await self.session_repo.find_many({
-                "requirement": {"$regex": f"Job ID: {re.escape(job_id)}", "$options": "i"}
+                "job_id": job_id
             }, limit=1)
             return sessions[0] if sessions else None
         except Exception as e:
@@ -194,43 +194,90 @@ class SessionService:
 
     async def _process_workflow(self, session_id: str):
         """
-        Execute the three-phase agent workflow.
+        Execute agent workflow for all tool generation requests.
 
         Args:
             session_id: Session ID
         """
         try:
-            logger.info(f"Starting workflow for session {session_id}")
+            logger.info(f"Starting agent workflow for session {session_id}")
 
             # Get session data
             session = await self.session_repo.get_by_id(session_id)
             if not session:
                 raise ValueError(f"Session not found: {session_id}")
 
-            # Check if this is a job-based tool generation request
-            if "Job ID:" in session.requirement and "Tool Requirements:" in session.requirement:
-                await self._process_job_requirements(session_id, session.requirement)
-                # Job processing handles its own completion status
-            else:
-                # Single-phase processing using OpenAI Agent
-                await self._process_with_openai_agent(session_id, session.requirement)
-                # Mark session as completed for non-job workflows
-                await self._update_session_status(session_id, SessionStatus.COMPLETED)
+            # Build prompt from tool requirements and process through OpenAI Agent
+            prompt = self._build_agent_prompt(session)
+            await self._process_with_openai_agent(session_id, prompt)
 
-            logger.info(f"Workflow completed for session {session_id}")
+            # Mark session as completed
+            await self._update_session_status(session_id, SessionStatus.COMPLETED)
+            logger.info(f"Agent workflow completed for session {session_id}")
 
         except asyncio.CancelledError:
             logger.info(f"Workflow cancelled for session {session_id}")
             await self._update_session_status(session_id, SessionStatus.FAILED, "Workflow cancelled")
 
         except Exception as e:
+            error_msg = f"Workflow failed: {str(e)}"
             logger.error(f"Workflow failed for session {session_id}: {e}")
-            await self._update_session_status(session_id, SessionStatus.FAILED, str(e))
+            await self._update_session_status(session_id, SessionStatus.FAILED, error_msg)
+
+            # Notify via WebSocket that workflow failed
+            await self._notify_session_update(session_id, {
+                "type": "workflow-failed",
+                "session_id": session_id,
+                "error": error_msg,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
 
         finally:
             # Clean up workflow tracking
             if session_id in self.active_workflows:
                 del self.active_workflows[session_id]
+
+    def _build_agent_prompt(self, session: Session) -> str:
+        """
+        Build agent prompt from session tool requirements.
+
+        Args:
+            session: Session with tool requirements
+
+        Returns:
+            str: Formatted prompt for the agent
+        """
+        if session.operation_type == "generate":
+            requirements = session.tool_requirements
+            prompt = f"Generate {len(requirements)} chemistry computation tools based on these requirements:\n\nTool Requirements:\n"
+            for i, req in enumerate(requirements, 1):
+                # Convert dict to UserToolRequirement if needed
+                if isinstance(req, dict):
+                    req_obj = UserToolRequirement(**req)
+                else:
+                    req_obj = req
+                prompt += f"""
+{i}. Description: {req_obj.description}
+   Input: {req_obj.input}
+   Output: {req_obj.output}
+"""
+        else:  # update
+            requirements = session.update_requirements
+            prompt = f"Update existing tools based on these requirements:\n\n"
+            prompt += f"Base Job ID: {session.base_job_id}\n"
+            prompt += "Update Requirements:\n"
+            for i, req in enumerate(requirements, 1):
+                # Convert dict to UserToolRequirement if needed
+                if isinstance(req, dict):
+                    req_obj = UserToolRequirement(**req)
+                else:
+                    req_obj = req
+                prompt += f"""
+{i}. Description: {req_obj.description}
+   Input: {req_obj.input}
+   Output: {req_obj.output}
+"""
+        return prompt
 
     async def _process_with_openai_agent(self, session_id: str, requirement: str):
         """Process requirement using OpenAI Agent SDK."""
@@ -250,6 +297,10 @@ class SessionService:
 
             if result["success"]:
                 logger.info(f"Successfully processed requirement for session {session_id}")
+
+                # Extract and store any generated tools
+                await self._process_agent_tool_results(session_id, result)
+
                 await self._notify_session_update(session_id, {
                     "type": "processing-completed",
                     "session_id": session_id,
@@ -264,119 +315,61 @@ class SessionService:
             logger.error(f"Error in OpenAI agent processing for session {session_id}: {e}")
             raise
 
-    async def _process_job_requirements(self, session_id: str, requirement: str):
-        """Process job-based tool generation requirements."""
-        logger.info(f"Processing job requirements for session {session_id}")
-        await self._update_session_status(session_id, SessionStatus.IMPLEMENTING)
-
+    async def _process_agent_tool_results(self, session_id: str, agent_result: Dict[str, Any]):
+        """Process tool generation results from the agent and store them in the session."""
         try:
-            # Parse job data from requirement string
-            import re
-            import ast
+            # Get the agent's conversation to extract tool execution results
+            thread_id = self.agent_manager.active_threads.get(session_id)
+            if not thread_id:
+                logger.warning(f"No thread found for session {session_id}, cannot extract tool results")
+                return
 
-            # Extract job ID
-            job_id_match = re.search(r"Job ID: (job_[a-f0-9]+)", requirement)
-            if not job_id_match:
-                raise ValueError("Could not extract job ID from requirement")
-            job_id = job_id_match.group(1)
+            # The agent manager should provide tool results in the result
+            tool_results = agent_result.get("tool_results", [])
+            tools_created = []
 
-            # Extract tool requirements
-            tool_req_match = re.search(r"Tool Requirements: (\[.*?\]) - Structured Requirements:", requirement, re.DOTALL)
-            if not tool_req_match:
-                raise ValueError("Could not extract tool requirements from requirement")
+            for tool_result in tool_results:
+                if tool_result.get("success") and tool_result.get("individual_tool"):
+                    # Create tool spec from the result
 
-            # Extract structured requirements
-            struct_req_match = re.search(r"Structured Requirements: (\[.*?\])$", requirement, re.DOTALL)
-            if not struct_req_match:
-                raise ValueError("Could not extract structured requirements from requirement")
+                    tool_name = tool_result.get("tool_name")
+                    output_file = tool_result.get("output_file")
 
-            try:
-                structured_requirements = ast.literal_eval(struct_req_match.group(1))
-            except:
-                raise ValueError("Could not parse structured requirements")
+                    if tool_name and output_file:
+                        try:
+                            # Read generated code
+                            with open(output_file, 'r') as f:
+                                tool_code = f.read()
 
-            # Generate tools using existing method
-            await self.generate_tools_from_requirements(
-                session_id=session_id,
-                job_id=job_id,
-                tool_requirements=[],  # We don't need the original format here
-                structured_requirements=structured_requirements
-            )
+                            tool_spec = ToolSpec(
+                                session_id=session_id,
+                                name=tool_name,
+                                file_name=f"{tool_name}.py",
+                                description=f"Generated chemistry tool: {tool_name}",
+                                code=tool_code,
+                                input_schema={},
+                                output_schema={}
+                            )
 
-        except Exception as e:
-            logger.error(f"Error processing job requirements for session {session_id}: {e}")
-            raise
+                            # Add tool to session's generated_tools list
+                            await self.session_repo.add_generated_tool(session_id, tool_spec)
+                            tools_created.append(tool_name)
 
-    async def generate_tools_from_requirements(
-        self,
-        session_id: str,
-        job_id: str,
-        tool_requirements: list,
-        structured_requirements: list
-    ):
-        """
-        Generate multiple tools from natural language requirements.
+                        except Exception as e:
+                            logger.error(f"Failed to process tool result for {tool_name}: {e}")
 
-        Args:
-            session_id: Session ID
-            job_id: Job ID for tracking
-            tool_requirements: Original natural language requirements
-            structured_requirements: Converted structured requirements for codex
-        """
-        try:
-            logger.info(f"Starting batch tool generation for job {job_id}, session {session_id}")
-            await self._update_session_status(session_id, SessionStatus.IMPLEMENTING)
-
-            # For now, generate a single combined tool file
-            # In a full implementation, you'd generate individual tools
-            combined_tool_name = f"generated_tools_{job_id.split('_')[1]}"
-
-            from app.utils.codex_utils import execute_codex_implement
-            result = await execute_codex_implement(combined_tool_name, structured_requirements)
-
-            if result["success"]:
-                logger.info(f"Successfully generated combined tool for job {job_id}")
-
-                # Create tool spec and add to session
-                from app.models.session import ToolSpec
-
-                # Read the generated code file
-                try:
-                    with open(result["output_file"], 'r') as f:
-                        generated_code = f.read()
-                except Exception as e:
-                    logger.warning(f"Could not read generated file: {e}")
-                    generated_code = "# Generated code file not found"
-
-                tool_spec = ToolSpec(
-                    session_id=session_id,
-                    name=combined_tool_name,
-                    file_name=f"{combined_tool_name}.py",
-                    description=f"Generated tools for job {job_id}",
-                    code=generated_code,
-                    input_schema={},
-                    output_schema={}
-                )
-
-                await self.session_repo.add_tool(session_id, tool_spec)
-                await self._update_session_status(session_id, SessionStatus.COMPLETED)
-
-                # Notify success
+            if tools_created:
+                logger.info(f"Added {len(tools_created)} tools to session {session_id}: {tools_created}")
                 await self._notify_session_update(session_id, {
                     "type": "tools-generated",
-                    "job_id": job_id,
-                    "tool_count": len(tool_requirements),
-                    "file_path": result["output_file"],
-                    "session_id": session_id
+                    "session_id": session_id,
+                    "tool_names": tools_created,
+                    "tool_count": len(tools_created)
                 })
 
-            else:
-                logger.error(f"Failed to generate tools for job {job_id}: {result['error']}")
-                await self._update_session_status(session_id, SessionStatus.FAILED, result["error"])
-
         except Exception as e:
-            logger.error(f"Error in batch tool generation for job {job_id}: {e}")
-            await self._update_session_status(session_id, SessionStatus.FAILED, str(e))
+            logger.error(f"Error processing agent tool results for session {session_id}: {e}")
+
 
     async def _update_session_status(self, session_id: str, status: SessionStatus, error_message: Optional[str] = None):
         """Update session status and notify via WebSocket."""
@@ -405,59 +398,6 @@ class SessionService:
             "session_id": session_id,
             **progress
         })
-
-    async def execute_tool(self, session_id: str, tool_name: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute a tool and store the result.
-
-        Args:
-            session_id: Session ID
-            tool_name: Name of tool to execute
-            inputs: Tool inputs
-
-        Returns:
-            Dict[str, Any]: Execution result
-        """
-        try:
-            # Execute tool via SimpleTooling
-            execution_result = await self.simpletooling_client.execute_tool(tool_name, inputs)
-
-            # Create execution result record
-            result = ExecutionResult(
-                session_id=session_id,
-                tool_id=tool_name,  # Using tool name as ID for now
-                tool_name=tool_name,
-                inputs=inputs,
-                outputs=execution_result.get("outputs"),
-                success=execution_result["status"] == "success",
-                error_message=execution_result.get("error"),
-                execution_time_ms=execution_result.get("execution_time_ms")
-            )
-
-            # Store execution result
-            await self.execution_repo.store_execution_result(result)
-
-            # Add to session results
-            await self.session_repo.add_execution_result(session_id, result)
-
-            # Notify via WebSocket
-            await self._notify_session_update(session_id, {
-                "type": "tool-executed",
-                "tool_name": tool_name,
-                "success": result.success,
-                "execution_time_ms": result.execution_time_ms,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-
-            return execution_result
-
-        except Exception as e:
-            logger.error(f"Tool execution failed for {tool_name}: {e}")
-            return {
-                "status": "error",
-                "tool_name": tool_name,
-                "error": str(e)
-            }
 
     async def cleanup_completed_workflows(self):
         """Clean up completed workflow tasks."""

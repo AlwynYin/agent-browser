@@ -4,82 +4,19 @@ Job management API endpoints for tool generation requests.
 
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, status
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from datetime import datetime, timezone
+
 import logging
+import uuid
+import re
 
 from app.services.session_service import SessionService
-from app.models.session import SessionCreate, SessionUpdate
+from app.models.job import *
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-class ToolRequirement(BaseModel):
-    """Tool requirement as specified in design spec."""
-    description: str = Field(..., description="Natural language description of the tool")
-    input: str = Field(..., description="Natural language description of the input")
-    output: str = Field(..., description="Natural language description of the output")
-
-
-class RequestMetadata(BaseModel):
-    """Optional request metadata."""
-    sessionId: Optional[str] = Field(None, description="Optional session tracking")
-    clientId: Optional[str] = Field(None, description="Client identifier")
-
-
-class ToolGenerationRequest(BaseModel):
-    """Request model matching design spec."""
-    toolRequirements: List[ToolRequirement]
-    metadata: Optional[RequestMetadata] = None
-
-
-class JobProgress(BaseModel):
-    """Job progress information."""
-    total: int = Field(..., description="Total tools to generate")
-    completed: int = Field(..., description="Successfully generated")
-    failed: int = Field(..., description="Failed generations")
-    inProgress: int = Field(..., description="Currently being generated")
-    currentTool: Optional[str] = Field(None, description="Name of tool currently being generated")
-
-
-class ToolFile(BaseModel):
-    """Generated tool file information."""
-    toolId: str = Field(..., description="Unique tool identifier")
-    fileName: str = Field(..., description="e.g., 'calculate_molecular_weight.py'")
-    filePath: str = Field(..., description="Full path to the file")
-    description: str = Field(..., description="Tool description from requirement")
-    code: str = Field(..., description="Generated Python code content")
-    endpoint: Optional[str] = Field(None, description="SimpleTooling HTTP endpoint URL")
-    registered: bool = Field(..., description="Whether registered with SimpleTooling")
-    createdAt: str = Field(..., description="ISO timestamp")
-
-
-class ToolGenerationFailure(BaseModel):
-    """Failed tool generation information."""
-    toolRequirement: ToolRequirement
-    error: str
-
-
-class GenerationSummary(BaseModel):
-    """Job completion summary."""
-    totalRequested: int
-    successful: int
-    failed: int
-
-
-class JobResponse(BaseModel):
-    """Response model matching design spec."""
-    jobId: str
-    status: str  # 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-    createdAt: str  # ISO timestamp
-    updatedAt: str  # ISO timestamp
-    progress: JobProgress
-    toolFiles: Optional[List[ToolFile]] = Field(None, description="Generated tool files (only when completed)")
-    failures: Optional[List[ToolGenerationFailure]] = Field(None, description="Failed tool generations")
-    summary: Optional[GenerationSummary] = Field(None, description="Job summary (only when completed)")
 
 
 # Dependency injection
@@ -105,9 +42,6 @@ async def submit_tool_generation_job(
         JobResponse: Job submission result
     """
     try:
-        from datetime import datetime, timezone
-        import uuid
-
         # Generate job ID
         job_id = f"job_{uuid.uuid4().hex[:8]}"
         client_id = request.metadata.clientId if request.metadata else "unknown"
@@ -115,32 +49,28 @@ async def submit_tool_generation_job(
 
         logger.info(f"Received tool generation job {job_id} from client {client_id}: {len(request.toolRequirements)} tools")
 
-        # Convert natural language requirements to structured format for codex
-        structured_requirements = []
-        for i, req in enumerate(request.toolRequirements):
-            tool_name = f"tool_{i+1}"
-            structured_req = {
-                "name": tool_name,
-                "description": req.description,
-                "params": [
-                    {"name": "input_data", "type": "str", "description": req.input}
-                ],
-                "returns": {
-                    "type": "Dict[str, Any]",
-                    "description": req.output
-                }
-            }
-            structured_requirements.append(structured_req)
+        # requirement_prompt = f"""
+        # Generate {len(request.userToolRequirements)} chemistry computation tools based on these requirements:
+        #
+        # Tool Requirements:
+        # """
+        # for i, req in enumerate(request.userToolRequirements, 1):
+        #     requirement_prompt += f"""
+        # {i}. Description: {req.description}
+        #    Input: {req.input}
+        #    Output: {req.output}
+        # """
+        #
+        # requirement_prompt += f"""
+        # Job ID: {job_id}
+        # Please analyze these requirements and create precise, individual tools with proper type specifications."""
 
-        # Create session with job metadata embedded in requirement
-        requirement_with_job = f"Job ID: {job_id} - Generate {len(request.toolRequirements)} tools - Tool Requirements: {request.toolRequirements} - Structured Requirements: {structured_requirements}"
-
-        session_data = SessionCreate(
+        session_id = await session_service.create_session(
+            job_id=job_id,
             user_id=client_id,
-            requirement=requirement_with_job
+            tool_requirements=request.toolRequirements,
+            operation_type="generate"
         )
-
-        session_id = await session_service.create_session(session_data)
         logger.info(f"Created session {session_id} for job {job_id}")
 
         # The workflow will handle tool generation asynchronously
@@ -181,7 +111,7 @@ async def get_job_status(
     Get the status of a tool generation job.
 
     Args:
-        job_id: Job ID (same as session ID)
+        jobId: Job ID (same as session ID)
         session_service: Session service instance
 
     Returns:
@@ -201,25 +131,17 @@ async def get_job_status(
         # Get detailed workflow status
         workflow_status = session_service.get_workflow_status(session.id)
 
-        # Create proper JobResponse
-        from datetime import datetime, timezone
-
         # Handle status as either enum or string
         status_str = session.status.value if hasattr(session.status, 'value') else str(session.status)
 
-        # Extract total tool count from requirement string
-        import re
-        total_tools = 1  # default
-        if "Generate" in session.requirement and "tools" in session.requirement:
-            match = re.search(r"Generate (\d+) tools", session.requirement)
-            if match:
-                total_tools = int(match.group(1))
+        # Get total tool count from session requirements
+        total_tools = len(session.tool_requirements) if session.tool_requirements else 1
 
         progress = JobProgress(
             total=total_tools,
-            completed=len([t for t in session.tools if t.registered]) if session.tools else 0,
+            completed=len(session.generated_tools) if session.generated_tools else 0,
             failed=0,
-            inProgress=0 if status_str in ["completed", "failed"] else (total_tools - len(session.tools)) if session.tools else total_tools,
+            inProgress=0 if status_str in ["completed", "failed"] else (total_tools - len(session.generated_tools)) if session.generated_tools else total_tools,
             currentTool=None if status_str in ["completed", "failed"] else "processing"
         )
 
@@ -236,16 +158,16 @@ async def get_job_status(
                     filePath=f"{get_settings().tools_path}/{tool.name}.py",
                     description=tool.description,
                     code=tool.code,  # Use the code stored in the ToolSpec model
-                    endpoint=f"http://localhost:8000/tool/{tool.name}" if tool.registered else None,
-                    registered=tool.registered,
+                    endpoint=None,  # No endpoints since we're not using SimpleTooling
+                    registered=False,  # Not registering tools anymore
                     createdAt=session.created_at.isoformat() if session.created_at else datetime.now(timezone.utc).isoformat()
                 )
-                for tool in session.tools
+                for tool in session.generated_tools
             ] if status_str == "completed" else None,
             failures=None,
             summary=GenerationSummary(
-                totalRequested=len(session.tools) if session.tools else 1,
-                successful=len([t for t in session.tools if t.registered]) if session.tools else 0,
+                totalRequested=len(session.generated_tools) if session.generated_tools else 1,
+                successful=len(session.generated_tools) if session.generated_tools else 0,
                 failed=0
             ) if status_str == "completed" else None
         )

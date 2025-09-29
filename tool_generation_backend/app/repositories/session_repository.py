@@ -9,8 +9,7 @@ import logging
 
 from .base import BaseRepository
 from app.models.session import (
-    Session, SessionStatus, SessionCreate, SessionUpdate,
-    ImplementationPlan, SearchPlan, ApiSpec, ToolSpec, ExecutionResult
+    Session, SessionStatus, ToolSpec, ImplementationPlan, SearchPlan, ApiSpec
 )
 
 logger = logging.getLogger(__name__)
@@ -22,20 +21,17 @@ class SessionRepository(BaseRepository[Session]):
     def __init__(self):
         super().__init__(Session, "sessions")
 
-    async def create_session(self, session_data: SessionCreate) -> str:
+    async def create_session(self, session_data: Dict[str, Any]) -> str:
         """
-        Create a new session from session creation data.
+        Create a new session from session data dict.
 
         Args:
-            session_data: Session creation request data
+            session_data: Session data dictionary
 
         Returns:
             str: Created session ID
         """
-        session_dict = session_data.model_dump()
-        session_dict["status"] = SessionStatus.PENDING
-
-        return await self.create(session_dict)
+        return await self.create(session_data)
 
     async def update_status(self, session_id: str, status: SessionStatus, error_message: Optional[str] = None) -> bool:
         """
@@ -131,9 +127,9 @@ class SessionRepository(BaseRepository[Session]):
         api_specs_dicts = [spec.model_dump() for spec in api_specs]
         return await self.update(session_id, {"api_specs": api_specs_dicts})
 
-    async def add_tool(self, session_id: str, tool: ToolSpec) -> bool:
+    async def add_generated_tool(self, session_id: str, tool: ToolSpec) -> bool:
         """
-        Add a generated tool to session.
+        Add a generated tool to session's generated_tools list.
 
         Args:
             session_id: Session ID
@@ -148,17 +144,17 @@ class SessionRepository(BaseRepository[Session]):
             # Use MongoDB array push operation
             result = await self.collection.update_one(
                 {"_id": ObjectId(session_id)},
-                {"$push": {"tools": tool_dict}}
+                {"$push": {"generated_tools": tool_dict}}
             )
 
             success = result.modified_count > 0
             if success:
-                logger.info(f"Added tool to session {session_id}: {tool.name}")
+                logger.info(f"Added generated tool to session {session_id}: {tool.name}")
 
             return success
 
         except Exception as e:
-            logger.error(f"Failed to add tool to session {session_id}: {e}")
+            logger.error(f"Failed to add generated tool to session {session_id}: {e}")
             return False
 
     async def store_tools(self, session_id: str, tools: List[ToolSpec]) -> bool:
@@ -211,36 +207,6 @@ class SessionRepository(BaseRepository[Session]):
 
         except Exception as e:
             logger.error(f"Failed to update tool registration for session {session_id}, tool {tool_name}: {e}")
-            return False
-
-    async def add_execution_result(self, session_id: str, result: ExecutionResult) -> bool:
-        """
-        Add tool execution result to session.
-
-        Args:
-            session_id: Session ID
-            result: Execution result data
-
-        Returns:
-            bool: True if added successfully
-        """
-        try:
-            result_dict = result.model_dump()
-
-            # Use MongoDB array push operation
-            update_result = await self.collection.update_one(
-                {"_id": ObjectId(session_id)},
-                {"$push": {"results": result_dict}}
-            )
-
-            success = update_result.modified_count > 0
-            if success:
-                logger.info(f"Added execution result to session {session_id}: {result.tool_name}")
-
-            return success
-
-        except Exception as e:
-            logger.error(f"Failed to add execution result to session {session_id}: {e}")
             return False
 
     async def get_sessions_by_user(self, user_id: str, limit: int = 50) -> List[Session]:
@@ -301,6 +267,9 @@ class SessionRepository(BaseRepository[Session]):
 
             # Index for status queries
             await self.collection.create_index("status")
+
+            # Index for job_id queries (direct lookup)
+            await self.collection.create_index("job_id")
 
             # Compound index for user + status queries
             await self.collection.create_index([("user_id", 1), ("status", 1)])
